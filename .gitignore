@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+.env
 # C extensions
 *.so
 
@@ -179,3 +180,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Local Data
+scanner_output/
+*.csv
+*.png
