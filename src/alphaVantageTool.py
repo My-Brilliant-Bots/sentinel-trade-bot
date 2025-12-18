@@ -27,21 +27,31 @@ def get_stock_data(symbol: str, use_mock_data: bool = False):
 
     try:
         # Get current price
+        print(f"Fetch price for {symbol}")
         price_url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={symbol}&apikey={ALPHA_VANTAGE_API_KEY}"
         price_response = requests.get(price_url).json()
-        print(f"Price response for {symbol}: {price_response}")
+        print("Sleep for 12 secs")
         time.sleep(12)  # Respect rate limits
 
         # Get 200-day SMA
+        print(f"Fetch SMA for {symbol}")
         sma_url = f"https://www.alphavantage.co/query?function=SMA&symbol={symbol}&interval=daily&time_period=200&series_type=close&apikey={ALPHA_VANTAGE_API_KEY}"
         sma_response = requests.get(sma_url).json()
-        print(f"SMA response for {symbol}: {sma_response}")
+        print("Sleep for 12 secs")
         time.sleep(12)  # Respect rate limits
 
         # Get 2-day RSI
+        print(f"Fetch RSI for {symbol}")
         rsi_url = f"https://www.alphavantage.co/query?function=RSI&symbol={symbol}&interval=daily&time_period=2&series_type=close&apikey={ALPHA_VANTAGE_API_KEY}"
         rsi_response = requests.get(rsi_url).json()
-        print(f"RSI response for {symbol}: {rsi_response}")
+        print("Sleep for 12 secs")
+        time.sleep(12)  # Respect rate limits
+
+        # Get options data (requires a premium Alpha Vantage API key)
+        print(f"Fetch options data for {symbol}")
+        options_url = f"https://www.alphavantage.co/query?function=HISTORICAL_OPTIONS&symbol={symbol}&apikey={ALPHA_VANTAGE_API_KEY}"
+        options_response = requests.get(options_url).json()
+        print("Sleep for 12 secs")
         time.sleep(12)  # Respect rate limits
 
         current_price = float(price_response[GLOBAL_QUOTE_KEY]['05. price']) if 'Global Quote' in price_response and '05. price' in price_response[GLOBAL_QUOTE_KEY] else None
@@ -49,13 +59,15 @@ def get_stock_data(symbol: str, use_mock_data: bool = False):
         sma_200 = float(sma_200_data[list(sma_200_data.keys())[0]]['SMA']) if sma_200_data else None
         rsi_2_data = rsi_response.get('Technical Analysis: RSI')
         rsi_2 = float(rsi_2_data[list(rsi_2_data.keys())[0]]['RSI']) if rsi_2_data else None
+        options_data_result = options_response.get('optionsData') # Assuming 'optionsData' is the key for options
 
-        print(f"Alpha Vantage API response for {symbol}: price={current_price}, sma_200={sma_200}, rsi_2={rsi_2}")
+        print(f"Alpha Vantage API response for {symbol}: price={current_price}, sma_200={sma_200}, rsi_2={rsi_2}, options_data={options_data_result}")
         return {
             "symbol": symbol,
             "price": current_price,
             "sma_200": sma_200,
-            "rsi_2": rsi_2
+            "rsi_2": rsi_2,
+            "options_data": options_data_result
         }
 
     except Exception as e:

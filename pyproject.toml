@@ -9,7 +9,7 @@ dependencies = [
     "autogen-ext[openai]>=0.4.0",
     "alpha_vantage",
     "pandas",
-    "python-dotenv"
+    "python-dotenv",
 ]
 
 [tool.uv]
