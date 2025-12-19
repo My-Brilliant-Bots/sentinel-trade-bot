@@ -10,6 +10,8 @@ dependencies = [
     "alpha_vantage",
     "pandas",
     "python-dotenv",
+    "yfinance",
+    "yoptions",
 ]
 
 [tool.uv]
