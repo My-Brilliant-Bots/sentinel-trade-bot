@@ -30,6 +30,8 @@ The system employs a multi-agent architecture to automate complex financial work
 
 The agents communicate within a `RoundRobinGroupChat` to collaboratively achieve the financial analysis and alerting goals.
 
+Please see [High Level Architecture](https://github.com/My-Brilliant-Bots/sentinel-trade-bot/wiki#high-level-architecture) For more details
+
 ## 📦 Installation
 
 This project uses **uv** for dependency management. If you don't have it, install it via `curl -LsSf https://astral.sh/uv/install.sh | sh`.

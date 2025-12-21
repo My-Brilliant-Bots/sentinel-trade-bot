@@ -1,0 +1,13 @@
+# Core dependencies
+yfinance>=0.2.32
+pandas>=2.0.0
+pandas-ta>=0.3.14b
+numpy>=1.24.0
+requests>=2.31.0
+
+# Email and notifications
+python-dotenv>=1.0.0
+
+# Optional - for advanced features
+matplotlib>=3.7.0  # For creating charts if needed
+tabulate>=0.9.0    # For better console output formatting
