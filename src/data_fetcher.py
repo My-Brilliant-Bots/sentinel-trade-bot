@@ -21,8 +21,11 @@ class StockDataFetcher:
         Now includes detailed MACD Histogram analysis for momentum shifts.
         """
         try:
+            print(f"Fetching stock market data for {symbol}")
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period=period)
+
+            print(f"Historical (1yr) data for {symbol} is {hist}")
             
             if hist.empty:
                 return {"error": f"No data available for {symbol}", "symbol": symbol}
@@ -187,7 +190,7 @@ class StockDataFetcher:
         
         # Sort by combined score
         trending.sort(key=lambda x: x['score'], reverse=True)
-        return [t['symbol'] for t in trending[:1]]
+        return [t['symbol'] for t in trending]
     
     def get_sp500_symbols(self) -> List[str]:
         """

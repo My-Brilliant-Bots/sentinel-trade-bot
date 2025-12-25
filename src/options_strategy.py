@@ -42,10 +42,12 @@ class OptionsStrategy:
             options_data: Options chain data
         
         Returns:
-            Recommended option contract details or None
+            Recommended option contract details or an error dictionary
         """
         if "error" in options_data:
-            return None
+            return {
+                "error": f"Options data unavailable: {options_data.get('error', 'unknown error')}"
+            }
         
         if self.strategy_type == 'long_call':
             return self._select_long_call(stock_data, options_data)
@@ -55,7 +57,9 @@ class OptionsStrategy:
             return self._select_bull_call_spread(stock_data, options_data)
         else:
             print(f"Strategy type {self.strategy_type} not implemented")
-            return None
+            return {
+                "error": f"Options strategy type '{self.strategy_type}' is not implemented."
+            }
     
     def _select_long_call(self, stock_data: Dict, options_data: Dict) -> Optional[Dict]:
         """
@@ -155,7 +159,13 @@ class OptionsStrategy:
                 })
         
         if not candidates:
-            return None
+            return {
+                "error": (
+                    f"No suitable long call options found for {symbol}. "
+                    "None of the contracts met the DTE, moneyness, delta, IV, "
+                    "liquidity, and bid-ask spread filters."
+                )
+            }
         
         # Return best candidate
         candidates.sort(key=lambda x: x['score'], reverse=True)
@@ -163,6 +173,8 @@ class OptionsStrategy:
         
         # Add recommendation rationale
         best['recommendation_rationale'] = self._generate_call_rationale(best, stock_data)
+        
+        print(f"Recommended option contract {best}")
         
         return best
     
@@ -233,7 +245,12 @@ class OptionsStrategy:
                 })
         
         if not candidates:
-            return None
+            return {
+                "error": (
+                    f"No suitable cash-secured put options found for {symbol}. "
+                    "None of the contracts met the DTE and target discount range filters."
+                )
+            }
         
         # Sort by annualized return
         candidates.sort(key=lambda x: x['annualized_return_pct'], reverse=True)

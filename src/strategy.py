@@ -47,7 +47,7 @@ class TradingStrategy:
             return rsi_macd_recovery_signal
 
          # 2. If no reversion, check Momentum (The "Profit Maker": Catches the middle of a big move. Higher reward.)
-        momentum_signal = self.generate_momentum_signal(stock_data)
+        momentum_signal = self._generate_momentum_signal(stock_data)
         if momentum_signal:
             return momentum_signal
 
@@ -259,7 +259,7 @@ class TradingStrategy:
         
         return None
 
-    def generate_momentum_signal(self, stock_data: Dict) -> Optional[Dict]:
+    def _generate_momentum_signal(self, stock_data: Dict) -> Optional[Dict]:
         """
         Generate BUY signal based on MACD Momentum (Trend Following)
         Best for: Catching the 'meat' of a 30-day move.
