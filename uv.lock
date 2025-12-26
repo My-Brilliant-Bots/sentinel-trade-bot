@@ -1455,9 +1455,11 @@ dependencies = [
     { name = "autogen-agentchat" },
     { name = "autogen-ext", extra = ["ollama", "openai"] },
     { name = "lxml" },
+    { name = "numpy" },
     { name = "pandas" },
     { name = "pandas-ta" },
     { name = "python-dotenv" },
+    { name = "requests" },
     { name = "yfinance" },
     { name = "yoptions" },
 ]
@@ -1473,9 +1475,11 @@ requires-dist = [
     { name = "autogen-agentchat", specifier = ">=0.4.0" },
     { name = "autogen-ext", extras = ["ollama", "openai"], specifier = ">=0.4.0" },
     { name = "lxml", specifier = ">=6.0.2" },
+    { name = "numpy", specifier = ">=2.2.6" },
     { name = "pandas" },
     { name = "pandas-ta", specifier = ">=0.4.71b0" },
     { name = "python-dotenv" },
+    { name = "requests", specifier = ">=2.32.5" },
     { name = "yfinance" },
     { name = "yoptions" },
 ]

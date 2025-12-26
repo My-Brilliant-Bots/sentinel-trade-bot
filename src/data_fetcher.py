@@ -2,6 +2,7 @@
 Data fetcher module using yfinance for fast, reliable data retrieval
 No rate limits, much faster than Alpha Vantage
 """
+import sys
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
@@ -81,11 +82,13 @@ class StockDataFetcher:
                 "volume_ratio": float(latest['Volume_Ratio']) if not pd.isna(latest['Volume_Ratio']) else 1.0,
                 "market_cap": info.get('marketCap'),
                 "sector": info.get('sector'),
-                "industry": info.get('industry'),
-                "history": hist,
-                "info": info
+                "industry": info.get('industry')
+                
             }
             
+            print("***** Result ")
+            print(stock_data)
+
             return stock_data
         except Exception as e:
             print(f"Error fetching data for {symbol}: {e}")

@@ -14,11 +14,6 @@ def send_email(subject:str, report:str):
   SMTP_USERNAME = os.environ.get("RESEND_USER") 
   SMTP_PASSWORD = os.environ.get("RESEND_API_KEY") 
 
-  print(f"SMTP Host: {SMTP_HOST}, Port: {SMTP_PORT}")
-  print(f"SMTP Username: {SMTP_USERNAME}")
-  # WARNING: Do not print SMTP_PASSWORD in production code
-  print(f"SMTP Password set: {bool(SMTP_PASSWORD)}")
-
   msg = EmailMessage()
   msg.set_content("This is the plain text body of the email sent via smtplib and Resend.")
   msg.add_alternative(f"""
