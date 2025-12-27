@@ -42,20 +42,47 @@ class StockRecommendAgent:
 
   def create_openai_client(self):
     
-    if self.api_type == "cerebras":
-      return OpenAIChatCompletionClient(
-      model=os.environ.get(self.model_name) ,
-      api_key=os.environ.get(self.api_key_name),
-      api_type=self.api_type,
-      response_format=TradeSignal,
-      base_url="https://api.cerebras.ai/v1",
-      model_info=ModelInfo(vision=True, function_calling=True, json_output=True, family="unknown", structured_output=True),)
-    else :
-      return OpenAIChatCompletionClient(
-      model=os.environ.get(self.model_name) ,
-      api_key=os.environ.get(self.api_key_name),
-      response_format=TradeSignal,
-      model_info=ModelInfo(vision=True, function_calling=True, json_output=True, family="unknown", structured_output=True),)
+    # 1. Define base configs for specific providers
+    api_configs = {
+        "cerebras": {
+            "base_url": "https://api.cerebras.ai/v1", 
+            "api_type": "cerebras"
+        },
+        "ollama": {
+            "base_url": "http://localhost:11434/v1", 
+            "api_type": "ollama"
+        },
+        "ollama_docker": {
+            "base_url": "http://localhost:11434/v1", 
+            "api_type": "ollama"
+        }
+    }
+
+    # 2. Start with common arguments used by EVERY client
+    client_args = {
+        "model": os.environ.get(self.model_name),
+        "response_format": TradeSignal,
+        "model_info": ModelInfo(
+            vision=True, 
+            function_calling=True, 
+            json_output=True, 
+            family="unknown", 
+            structured_output=True
+        )
+    }
+
+    # 3. Add provider-specific settings (base_url, etc.)
+    provider_settings = api_configs.get(self.api_type, {})
+    client_args.update(provider_settings)
+
+    # 4. Logic for API Key: Skip only for Ollama
+    if self.api_type == "ollama":
+        client_args["api_key"] = "not-required" # Local servers often ignore this
+    else:
+        # Require key from environment for all others
+        client_args["api_key"] = os.environ.get(self.api_key_name)
+
+    return OpenAIChatCompletionClient(**client_args)
 
 
   def create_trading_team(self):
@@ -88,7 +115,7 @@ class StockRecommendAgent:
         participants=[analyst, options_agent, data_clerk],
         max_turns=3)
 
-  async def run_agentic_analysis_stock( self,symbol_to_analyze ):
+  async def recommend_trades( self,symbol_to_analyze ):
     # Create a fresh team instance to reset conversation history
     trading_team = self.create_trading_team()
     
@@ -107,15 +134,26 @@ class StockRecommendAgent:
 
     augemented_query = augment_query_with_context(symbol_to_analyze,task)
 
-    result = await trading_team.run(task=augemented_query)
-    
-    # Print all messages for debugging
-    for i, message in enumerate(result.messages):
-        print(f"[{i+1}] {message.source}: {message.content}")
-    
-    # Get the last message content (from the Data_Clerk) - should be a JSON array
-    final_msg = result.messages[-1].content
-    print(f"\nFinal message from Data_Clerk:\n{final_msg}\n")
+    final_msg = """
+    ```json
+    ```
+    """
+    try:
+      print("Trading Team Start")
+      result = await trading_team.run(task=augemented_query)
+      print("Trading Team End")
+      
+      # Print all messages for debugging
+      #for i, message in enumerate(result.messages):
+      #    print(f"[{i+1}] {message.source}: {message.content}")
+      
+      # Get the last message content (from the Data_Clerk) - should be a JSON array
+      final_msg = result.messages[-1].content
+      print(f"\nFinal message from Data_Clerk:\n{final_msg}\n")
+    except ValueError as ve:
+      print(f"Trading Team Error {type(ve).__name__} - {ve} ")
+    except Exception as e:
+      print(f"Trading Team Error {type(e).__name__} - {e} ")
     
     return final_msg
   

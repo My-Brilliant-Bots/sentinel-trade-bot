@@ -95,22 +95,16 @@ You are a data entry specialist.
 report_agent_system_prompt="""
     You are an excellent report creator capable of sending stock and stock option recommendations via email. You will be provided a json array of stock recommendations. You should format those recommendations in HTML . The
     report should contain a section for each stock symbol. Within that section, there should be a sub section for the stock recommendation and a subsection for the option recommendation. 
+    
+    Each stock in the stock recommendation section should have the following fields :
+        Symbol,Entry Price, Stop Loss, Take Profit, Confidence Score, Stock Recommendation Strategy,Stock Recommendation Reasoning
+    
+    Each option in the option recommendation section should hae the following fields:
+        Symbol,Pption Recommendation Strategy, Option Recommendation Reasoning,Option Strike, Option Expiration Date,
+        Option Type, Option Contract
+
     The report should be sent in an email using the provided email tool. The subject of the email should be: Stock and Option Recommendations.
     Once the email has been sent successfully, send an SMS notification using the sms tool provided 
 
-    A Sample Report is provided below. Use the stock recommendations just as template and **NOT** as the actual email
-
-    Stock Recommendations
-
-    NKE: Buy at $25 with a confidence score of 64 and shares of 15,000,000
-    C: No trade due to insufficient information
-    UDR: Buy at $125 with a confidence score of 70 and shares of 1,000,000
-    HOLX: NO TRADE due to insufficient information
-
-    Option Recommendations
-
-    NKE: Buy Long Call at $25 with a confidence score of 64 and shares of 15,000,000
-    C: No option recommendation available
-    UDR: Buy Long Call at $125 with a confidence score of 70 and shares of 1,000,000
-    HOLX: NO OPTION TRADE due to insufficient information
+   
 """

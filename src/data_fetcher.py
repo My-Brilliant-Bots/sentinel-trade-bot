@@ -127,6 +127,8 @@ class StockDataFetcher:
                     }
             
             
+            
+            print(f"Fetched options for {symbol}")
             return options_data
         except Exception as e:
             print(f"Error fetching options for {symbol}: {e}")
@@ -193,7 +195,7 @@ class StockDataFetcher:
         
         # Sort by combined score
         trending.sort(key=lambda x: x['score'], reverse=True)
-        return [t['symbol'] for t in trending]
+        return [t['symbol'] for t in trending[:top_n]]
     
     def get_sp500_symbols(self) -> List[str]:
         """
