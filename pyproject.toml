@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Multi-agent S&P 500 scanner using AutoGen and Alpha Vantage"
 readme = "README.md"
 dependencies = [
-    "autogen-agentchat>=0.4.0",
+    "autogen-agentchat[cerebras]~=0.2",
     "autogen-ext[ollama,openai]>=0.4.0",
     "alpha_vantage",
     "pandas",
