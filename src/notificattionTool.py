@@ -2,11 +2,16 @@ import smtplib
 from email.message import EmailMessage
 import os
 import requests
+import logging
+from logging_config import get_logger
+
+logging = get_logger(__name__)
 
 def send_email(subject:str, report:str):
-  print(f"\n--- Calling send_email ---")
-  print(f"Email Subject: {subject}")
-  print(f"Email Report (first 200 chars): {report[:200]}...")
+  logging.debug(f"\n--- Calling send_email ---")
+  logging.debug(f"Email Subject: {subject}")
+  logging.debug(f"Email Report (first 200 chars): {report[:200]}...")
+
   """ Sends an email with a subject and the consolidated report """
   # Set environment variables for credentials
   SMTP_HOST = os.environ.get("RESEND_SERVER") 
@@ -29,19 +34,20 @@ def send_email(subject:str, report:str):
       with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
           server.login(SMTP_USERNAME, SMTP_PASSWORD)
           server.send_message(msg)
-      print("Email sent successfully!")
+      logging.debug("Email sent successfully!")
   except Exception as e:
-      print(f"Error: {e}")
+      logging.error(f"Error: {e}")
 
 def send_sms_text(text_message:str):
-    print(f"\n--- Calling send_sms_text ---")
-    print(f"SMS Message: {text_message}")
+    logging.debug(f"\n--- Calling send_sms_text ---")
+    logging.debug(f"SMS Message: {text_message}")
+
     """ Sends an text message using SMS """
     pushover_user = os.getenv("PUSHOVER_USER")
     pushover_token = os.getenv("PUSHOVER_TOKEN")
     pushover_url = os.getenv("PUSHOVER_URL")
 
-    print(f"Push: {text_message}")
+    logging.debug(f"Push: {text_message}")
     payload = {"user": pushover_user, "token": pushover_token, "message": text_message}
     requests.post(pushover_url, data=payload)
 

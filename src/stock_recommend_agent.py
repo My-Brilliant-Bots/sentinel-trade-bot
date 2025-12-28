@@ -7,10 +7,15 @@ from pydantic import BaseModel
 from typing import Optional
 import os
 import json
+import logging
 
 from prompts import technical_analyst_prompt, risk_manager_system_prompt, options_strategist_system_prompt, data_clerk_system_prompt, report_agent_system_prompt
 
 from ragQuery import augment_query_with_context
+
+from logging_config import get_logger
+
+logging = get_logger(__name__)
 
 class TradeSignal(BaseModel):
     symbol: str
@@ -84,7 +89,7 @@ class StockRecommendAgent:
     provider_settings = api_configs.get(self.api_type, {})
     client_args.update(provider_settings)
 
-    print(f"LLM Provider Settings : {client_args}")
+    logging.debug(f"LLM Provider Settings : {client_args}")
 
     # 4. Logic for API Key: Skip only for Ollama
     if self.api_type == "ollama":
@@ -150,9 +155,9 @@ class StockRecommendAgent:
     ```
     """
     try:
-      print("Trading Team Start")
+      logging.debug("Trading Team Start")
       result = await trading_team.run(task=augemented_query)
-      print("Trading Team End")
+      logging.debug("Trading Team End")
       
       # Print all messages for debugging
       #for i, message in enumerate(result.messages):
@@ -160,11 +165,11 @@ class StockRecommendAgent:
       
       # Get the last message content (from the Data_Clerk) - should be a JSON array
       final_msg = result.messages[-1].content
-      print(f"\nFinal message from Data_Clerk:\n{final_msg}\n")
+      logging.debug(f"\nFinal message from Data_Clerk:\n{final_msg}\n")
     except ValueError as ve:
-      print(f"Trading Team Error {type(ve).__name__} - {ve} ")
+      logging.error(f"Trading Team Error {type(ve).__name__} - {ve} ")
     except Exception as e:
-      print(f"Trading Team Error {type(e).__name__} - {e} ")
+      logging.error(f"Trading Team Error {type(e).__name__} - {e} ")
     
     return final_msg
   

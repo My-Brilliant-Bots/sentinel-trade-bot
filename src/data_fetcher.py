@@ -8,14 +8,164 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import pandas_ta as ta
+import numpy as np
 import requests
+import logging
+from logging_config import get_logger
+
+logging = get_logger(__name__)
 
 class StockDataFetcher:
     """Handles all stock data retrieval operations"""
     
     def __init__(self):
         self.cache = {}
-    
+
+    def get_enhanced_stock_data(
+    self,
+    symbol: str, 
+    period: str = "1y", 
+    history_window: int = 60  # Days of history to return for LLMs (configurable)
+    ) -> Optional[Dict[str, any]]:
+
+        """
+        Fetch enhanced stock data with indicators for multiple strategies (Connors RSI 2, RSI Divergence, 50-Crossover)
+        and pre-formatted data for LLM recommendations. Includes trimmed history for context.
+
+        Args:
+            symbol: Stock ticker (e.g., 'AAPL').
+            period: YF period (e.g., '1y').
+            history_window: Number of recent days to include in response (e.g., 60 for divergences).
+
+        Returns:
+            Dict with latest indicators, strategy signals, history slice, and LLM-friendly prompt. None on error.
+        """
+        try:
+            logging.debug(f"Fetching enhanced data for {symbol}")
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=period)
+
+            if hist.empty:
+                return {"error": f"No data for {symbol}", "symbol": symbol}
+
+            # Trim to last 'history_window' days for efficiency (tail preserves recency)
+            hist = hist.tail(history_window)  # Ensures sufficient data but not full period
+            
+            # Core Indicators (from original get_stock_data)
+            hist['SMA_50'] = hist['Close'].rolling(window=50).mean()
+            hist['SMA_200'] = hist['Close'].rolling(window=200, min_periods=1).mean()  # Allow partial if <200 in window
+            hist['RSI_2'] = ta.rsi(hist['Close'], length=2)
+            hist['RSI_14'] = ta.rsi(hist['Close'], length=14)
+            hist['ATR_14'] = ta.atr(hist['High'], hist['Low'], hist['Close'], length=14)
+            
+            # MACD for momentum
+            macd_df = ta.macd(hist['Close'], fast=12, slow=26, signal=9)
+            hist = pd.concat([hist, macd_df], axis=1)
+            macd_h_col = 'MACDh_12_26_9'  # Histogram
+            
+            # Volume
+            hist['Volume_SMA_20'] = hist['Volume'].rolling(window=20, min_periods=1).mean()
+            hist['Volume_Ratio'] = hist['Volume'] / hist['Volume_SMA_20'].replace(0, 1)  # Avoid div by zero
+
+            # Strategy-Specific Calculations
+            # 1. 50-Crossover: Cross signal based on price vs SMA-50 (1=buy, -1=sell, 0=neutral)
+            hist['Price_vs_SMA50'] = np.where(hist['Close'] > hist['SMA_50'], 1, -1)
+            hist['SMA50_Cross'] = hist['Price_vs_SMA50'].diff().fillna(0)  # Change in signal
+            
+            # 2. Connors RSI 2 (Simplified): RSI-2 + Streak (consec up/down days) + %Rank(Close, 100)
+            hist['Streak'] = ((hist['Close'] > hist['Close'].shift(1)).astype(int) * 2 - 1).groupby(
+                (hist['Close'] > hist['Close'].shift(1)).astype(int).ne(hist['Close'].shift(1, fill_value=0).astype(int)).cumsum()).cumsum()
+            hist['Percent_Rank'] = (hist['Close'].rank(pct=True) * 100).rolling(100, min_periods=10).mean()  # Approx %Rank
+            hist['Connors_RSI2'] = (hist['RSI_2'] + hist['Streak'] + hist['Percent_Rank']) / 3  # Normalized avg
+            
+            # 3. RSI Divergence: Basic detection (manual: compare peaks/valleys in price vs RSI)
+            # Note: For simplicity, check if last 5 days show divergence (e.g., price up, RSI down). Use libraries for prod.
+            hist['Price_Change'] = hist['Close'].pct_change()
+            hist['RSI_Change'] = hist['RSI_14'].pct_change()
+            hist['Divergence_Bearish'] = ((hist['Price_Change'] > 0) & (hist['RSI_Change'] < 0)).rolling(5).sum() / 5 >= 0.6  # >60% in 5 days
+            hist['Divergence_Bullish'] = ((hist['Price_Change'] < 0) & (hist['RSI_Change'] > 0)).rolling(5).sum() / 5 >= 0.6
+
+            # Latest & Previous
+            latest = hist.iloc[-1]
+            prev = hist.iloc[-2] if len(hist) > 1 else latest
+            info = ticker.info
+
+            # Strategies Summary for LLMs
+            strategies = {
+                "50_Crossover": {
+                    "signal": "Bullish" if latest['SMA50_Cross'] > 0 else "Bearish" if latest['SMA50_Cross'] < 0 else "Neutral",
+                    "trend": "Uptrend" if latest['Price_vs_SMA50'] == 1 else "Downtrend",
+                    "details": f"Price at {latest['Close']:.2f}, SMA-50 at {latest['SMA_50']:.2f}. Recent cross: {latest['SMA50_Cross']}"
+                },
+                "Connors_RSI2": {
+                    "score": round(latest['Connors_RSI2'], 2) if not pd.isna(latest['Connors_RSI2']) else None,
+                    "interpretation": "Oversold (<40)" if latest['Connors_RSI2'] < 40 else "Neutral (40-60)" if latest['Connors_RSI2'] < 60 else "Overbought (>60)",
+                    "details": f"RSI-2: {latest['RSI_2']:.2f}, Streak: {latest['Streak']}, %Rank: {latest['Percent_Rank']:.2f}"
+                },
+                "RSI_Divergence": {
+                    "signal": "Bullish" if latest['Divergence_Bullish'] else "Bearish" if latest['Divergence_Bearish'] else "None",
+                    "details": f"Over last 5 days, {'bullish' if latest['Divergence_Bullish'] else 'bearish' if latest['Divergence_Bearish'] else 'no'} divergence detected (price vs RSI-14)."
+                }
+            }
+
+            # LLM Prompt: Structured JSON + Narrative Text
+            llm_prompt = {
+                "data_type": "enhanced_stock_analysis",
+                "symbol": symbol,
+                "price": float(latest['Close']),
+                "prev_price": float(prev['Close']),
+                "indicators": {
+                    "rsi_2": float(latest['RSI_2']) if not pd.isna(latest['RSI_2']) else None,
+                    "rsi_14": float(latest['RSI_14']) if not pd.isna(latest['RSI_14']) else None,
+                    "sma_50": float(latest['SMA_50']) if not pd.isna(latest['SMA_50']) else None,
+                    "macd_hist": float(latest[macd_h_col]) if not pd.isna(latest[macd_h_col]) else None,
+                    "atr_14": float(latest['ATR_14']) if not pd.isna(latest['ATR_14']) else None,
+                    "volume_ratio": float(latest['Volume_Ratio']) if not pd.isna(latest['Volume_Ratio']) else 1.0
+                },
+                "strategies": strategies,
+                "history_summary": f"Recent 30-day high: {hist['Close'].tail(30).max():.2f}, low: {hist['Close'].tail(30).min():.2f}. Trend: {'Bullish' if hist['Close'].iloc[-1] > hist['Close'].iloc[-30] else 'Bearish'} over past month.",
+                "narrative_text": f"""
+                Stock {symbol} currently trades at ${latest['Close']:.2f}, up {((latest['Close']/prev['Close'])-1)*100:.1f}% from previous day.
+                RSI-14 is {latest['RSI_14']:.0f}, indicating {'overbought' if latest['RSI_14'] > 70 else 'oversold' if latest['RSI_14'] < 30 else 'neutral'} conditions.
+                SMA-50 crossover signals: {strategies['50_Crossover']['signal']} with {strategies['50_Crossover']['trend']} trend.
+                Connors RSI-2 score: {strategies['Connors_RSI2']['score']} ({strategies['Connors_RSI2']['interpretation']}).
+                RSI Divergence: {strategies['RSI_Divergence']['signal']} if present, suggesting potential reversal.
+                Volume is {'elevated' if latest['Volume_Ratio'] > 1.2 else 'low'} at {latest['Volume_Ratio']:.1f}x average.
+                MACD histogram: {latest[macd_h_col]:.3f}, indicating {'bullish momentum' if latest[macd_h_col] > 0 else 'bearish momentum'}.
+                Market cap: {info.get('marketCap', 'N/A')}, sector: {info.get('sector', 'N/A')}.
+                Historical context: Over the last 30 days, average volatility (ATR-14): {hist['ATR_14'].tail(30).mean():.2f}, max close: {hist['Close'].tail(30).max():.2f}.
+                Analysis: Recommend caution—backtest these signals. This data is for informational purposes only; consult a financial advisor.
+                """.strip()
+            }
+
+            # Main Response: Core data + History DF (pandas DF is JSON-serializable if converted to dict)
+            stock_data = {
+                "symbol": symbol,
+                "price": float(latest['Close']),
+                "prev_close": float(prev['Close']),
+                "sma_50": float(latest['SMA_50']) if not pd.isna(latest['SMA_50']) else None,
+                "rsi_2": float(latest['RSI_2']) if not pd.isna(latest['RSI_2']) else None,
+                "rsi_14": float(latest['RSI_14']) if not pd.isna(latest['RSI_14']) else None,
+                "connors_rsi2": float(latest['Connors_RSI2']) if not pd.isna(latest['Connors_RSI2']) else None,
+                "divergence_bullish": bool(latest['Divergence_Bullish']),
+                "sma50_cross_signal": float(latest['SMA50_Cross']),
+                "macd_hist": float(latest[macd_h_col]) if not pd.isna(latest[macd_h_col]) else None,
+                "atr_14": float(latest['ATR_14']) if not pd.isna(latest['ATR_14']) else None,
+                "volume_ratio": float(latest['Volume_Ratio']) if not pd.isna(latest['Volume_Ratio']) else 1.0,
+                "market_cap": info.get('marketCap'),
+                "sector": info.get('sector'),
+                "history": hist[['Close', 'Open', 'High', 'Low', 'Volume', 'SMA_50', 'RSI_14', macd_h_col]].to_dict('records'),  # JSON-friendly; last 60 days
+                "llm_prompt": llm_prompt
+            }
+
+            logging.debug(f"Successfully processed {symbol}")
+            return stock_data
+
+        except Exception as e:
+            logging.error(f"Error for {symbol}: {e}")
+            raise e
+            
+
     def get_stock_data(self, symbol: str, period: str = "1y") -> Optional[Dict]:
         """
         Fetch comprehensive stock data including price, indicators, and history.
@@ -106,7 +256,7 @@ class StockDataFetcher:
             Dictionary with options data organized by expiration date
         """
         try:
-            print(f"Fetch options for {symbol}")
+            logging.debug(f"Fetch options for {symbol}")
 
             ticker = yf.Ticker(symbol)
             today = datetime.today()
@@ -128,10 +278,10 @@ class StockDataFetcher:
             
             
             
-            print(f"Fetched options for {symbol}")
+            logging.debug(f"Fetched options for {symbol}")
             return options_data
         except Exception as e:
-            print(f"Error fetching options for {symbol}: {e}")
+            logging.error(f"Error fetching options for {symbol}: {e}")
             return {"error": str(e), "symbol": symbol}
     
     def _process_options(self, options_df: pd.DataFrame, option_type: str) -> List[Dict]:
@@ -180,7 +330,8 @@ class StockDataFetcher:
                 # Price momentum
                 price_change_5d = (hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0] * 100
                 
-                print(f"Volume ratio for {symbol} is {volume_ratio}")
+                logging.debug(f"Volume ratio for {symbol} is {volume_ratio}")
+                
                 # Only include stocks with significant activity
                 if volume_ratio > 0.7:  # 50% above average volume
                     trending.append({
@@ -190,7 +341,7 @@ class StockDataFetcher:
                         'score': volume_ratio * abs(price_change_5d)  # Combined score
                     })
             except Exception as e:
-                print(f"Error analyzing {symbol}: {e}")
+                logging.error(f"Error analyzing {symbol}: {e}")
                 continue
         
         # Sort by combined score
@@ -218,3 +369,4 @@ class StockDataFetcher:
             # Fallback to a subset
             return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA',
                     'JPM', 'JNJ', 'V', 'PG', 'MA', 'HD', 'CVX', 'MRK', 'ABBV', 'PEP']
+

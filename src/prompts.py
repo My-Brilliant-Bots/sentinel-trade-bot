@@ -10,16 +10,30 @@ technical_analyst_prompt="""
        - Entry Price: MUST use the current_price value from the tool response (do not make up a price)
        - Stop Loss: Calculate based on ATR or technical support levels
        - Take Profit: Calculate based on risk/reward ratio
-       - Stock recommendation: "BUY" with reasoning
+       - Stock recommendation: "BUY" with reasoning 
     5. If the setup looks bearish, recommend:
        - Stock recommendation: "SELL" with reasoning
     6. If the setup is weak, recommend:
        - Stock recommendation: "NO TRADE" with reasoning explaining why
+
+    Output your response in pure json only matching this schema:
+
+    {
+        "symbol": "TICKER",
+        "entry_price": 0.0,
+        "stop_loss": 0.0,
+        "take_profit": 0.0,
+        "confidence_score": 0.0,
+        "shares": 0,
+        "stock_recommendation_strategy": "BUY/SELL/HOLD/NO TRADE",
+        "stock_recommendation_reasoning": "explanation"
+    }
     
     CRITICAL: 
     - Always use the exact current_price value shown in the tool response. Never invent or estimate prices.
     - Process ALL symbols mentioned in the task, not just one.
     - Provide clear recommendations for each symbol separately.
+    - Provide clear reasoning and along with memomentum strategy that was best suited for this trade recommendation
 """
 
 risk_manager_system_prompt="""
@@ -47,6 +61,17 @@ You are the Derivatives Specialist.
        - option_recommendation_strategy: "NO TRADE"
        - option_recommendation_reasoning: Clear reason why no options were recommended (e.g., "No suitable options found: [reason from tool]")
        - All other option fields should be null
+
+    Output your response in pure json only matching this schema:
+    {
+        "symbol": "TICKER",
+        "option_recommendation_strategy": "Buy Long Call/Buy Long Put/Covered Call/NO TRADE",
+        "option_recommendation_reasoning": "explanation",
+        "option_strike": 0.0 or null,
+        "option_expiration_date": "YYYY-MM-DD" or "Month DD, YYYY" or null,
+        "option_type": "call" or "put" or null,
+        "option_contract": "formatted string" or null
+    }
     
     IMPORTANT: 
     - Always extract the exact strike price and expiration date from the tool response. Do not invent or estimate these values.
@@ -88,7 +113,7 @@ You are a data entry specialist.
     4. entry_price must be the actual current stock price from the market data tool
     5. If no trade was approved, set stock_recommendation_strategy to "NO TRADE" and provide reasoning
     
-    Do not output as markdown. Output as pure JSON array string with no ```json ``` wrapper.
+    Do not output as markdown. Output as pure JSON array string. Do not wrap the output with ``` ``` markdown.
     Example format: [{"symbol": "AAPL", ...}, {"symbol": "MSFT", ...}]
 """
 
@@ -100,7 +125,7 @@ report_agent_system_prompt="""
         Symbol,Entry Price, Stop Loss, Take Profit, Confidence Score, Stock Recommendation Strategy,Stock Recommendation Reasoning
     
     Each option in the option recommendation section should hae the following fields:
-        Symbol,Pption Recommendation Strategy, Option Recommendation Reasoning,Option Strike, Option Expiration Date,
+        Symbol,Option Recommendation Strategy, Option Recommendation Reasoning,Option Strike Price, Option Expiration Date,
         Option Type, Option Contract
 
     The report should be sent in an email using the provided email tool. The subject of the email should be: Stock and Option Recommendations.

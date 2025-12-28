@@ -14,11 +14,18 @@ from data_fetcher import StockDataFetcher
 from stock_recommend_agent import StockRecommendAgent
 from notificattionTool import send_email, send_sms_text
 from prompts import report_agent_system_prompt
+import logging
+
+from logging_config import get_logger
+
+logging = get_logger(__name__)
+logging.debug("Checking RSI 2 conditions...") 
+
 
 load_dotenv()
 
 async def run_agentic_analysis():
-    print("--- STARTING AGENTIC ANALYSIS ---")
+    logging.debug("--- STARTING AGENTIC ANALYSIS ---")
 
     fetcher = StockDataFetcher()
     sp500 = fetcher.get_sp500_symbols()
@@ -28,7 +35,7 @@ async def run_agentic_analysis():
     
     trending_symbols = fetcher.get_trending_stocks(sp500, top_n=max_stocks_to_recommended)
     
-    print(f"Analyzing symbols: {trending_symbols}")
+    logging.debug(f"Analyzing symbols: {trending_symbols}")
     
     all_signals_for_report = []
     
@@ -43,20 +50,20 @@ async def run_agentic_analysis():
         #    carebras_recommendation_agent.recommend_trades(symbol),
         #    return_exceptions=True
         #)
-        print("Gemma Model start")
+        logging.debug(f"Start Recommendation for {symbol} ")
         model1_stock_recommendation = await model1_recommendation_engine.recommend_trades(symbol)
-        print("Gemma Model end")
+        logging.debug(f"End Recommendation for {symbol} ")
        
 
         # Process Gemini result
         if isinstance(model1_stock_recommendation, str):
             gemini_clean_json = model1_stock_recommendation.replace("```json", "").replace("```", "").strip()
-            print(f"Gemini Recommendation is {gemini_clean_json}")
+            logging.debug(f"Recommendation is {gemini_clean_json}")
             all_signals_for_report.append(gemini_clean_json)
         
 
         if i < len(trending_symbols) - 1:  
-            print("Waiting 61 seconds to avoid rate limit...")
+            logging.debug("Waiting 61 seconds to avoid rate limit...")
             await asyncio.sleep(61) 
     
     # Re-initialize the model using Ollama for reporting
