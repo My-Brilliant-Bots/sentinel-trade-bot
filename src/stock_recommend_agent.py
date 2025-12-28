@@ -6,6 +6,7 @@ from autogen_core.models import ModelInfo
 from pydantic import BaseModel
 from typing import Optional
 import os
+import json
 
 from prompts import technical_analyst_prompt, risk_manager_system_prompt, options_strategist_system_prompt, data_clerk_system_prompt, report_agent_system_prompt
 
@@ -55,6 +56,14 @@ class StockRecommendAgent:
         "ollama_docker": {
             "base_url": "http://localhost:11434/v1", 
             "api_type": "ollama"
+        },
+        "openrouter": {
+            "base_url": "https://openrouter.ai/api/v1", 
+            "default_headers": {
+                "HTTP-Referer": "http://localhost:3000", # Required for OpenRouter rankings
+                "X-Title": "StockAnalysisBot",           # Name of your bot
+                "transforms": json.dumps([])             # Disables OpenRouter's auto-compression
+            }
         }
     }
 
@@ -74,6 +83,8 @@ class StockRecommendAgent:
     # 3. Add provider-specific settings (base_url, etc.)
     provider_settings = api_configs.get(self.api_type, {})
     client_args.update(provider_settings)
+
+    print(f"LLM Provider Settings : {client_args}")
 
     # 4. Logic for API Key: Skip only for Ollama
     if self.api_type == "ollama":

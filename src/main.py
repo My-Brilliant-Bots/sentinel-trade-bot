@@ -34,7 +34,7 @@ async def run_agentic_analysis():
     
     # Initialize agents
     #model1_recommendation_engine = StockRecommendAgent("GEMINI_API_KEY", "LLM_MODEL_1","ollama")
-    model1_recommendation_engine = StockRecommendAgent("CEREBRAS_API_KEY", "LLM_MODEL_2", "ollama_docker")
+    model1_recommendation_engine = StockRecommendAgent("OPENROUTER_API_KEY", "LLM_MODEL_1", "openrouter")
 
     for i, symbol in enumerate(trending_symbols):
         # Run recommendations in parallel
