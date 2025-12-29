@@ -40,12 +40,12 @@ async def run_agentic_analysis():
     all_signals_for_report = []
     
     # Initialize agents. 
-    #model1_recommendation_engine = StockRecommendAgent("GEMINI_API_KEY", "GEMINI_MODEL","ollama")
+    #model1_recommendation_engine = StockRecommendAgent()
 
-    model1_recommendation_engine = StockRecommendAgent("CEREBRAS_API_KEY", "CAREBRAS_LLM_MODEL", "cerebras")
-    #model1_recommendation_engine = StockRecommendAgent("OPENROUTER_API_KEY", "OPENROUTER_LLM_MODEL", "openrouter")
+    model1_recommendation_engine = StockRecommendAgent()
+    #model1_recommendation_engine = StockRecommendAgent()
 
-    #model1_recommendation_engine = StockRecommendAgent("GROQ_API_KEY", "GROQ_LLM_MODEL", "groq")
+    #model1_recommendation_engine = StockRecommendAgent()
 
     for i, symbol in enumerate(trending_symbols):
         # Run recommendations in parallel
@@ -54,14 +54,13 @@ async def run_agentic_analysis():
         #    carebras_recommendation_agent.recommend_trades(symbol),
         #    return_exceptions=True
         #)
-        
+
         # Set skip_llm to True while debugging code that does not need LLM invocation.
-        skip_llm:bool = True
+        skip_llm:bool = False
         logging.debug(f"Start Recommendation for {symbol} ")
         model1_stock_recommendation = await model1_recommendation_engine.recommend_trades(symbol,skip_llm)
         logging.debug(f"End Recommendation for {symbol} ")
        
-
         # Process Gemini result
         if isinstance(model1_stock_recommendation, str):
             gemini_clean_json = model1_stock_recommendation.replace("```json", "").replace("```", "").strip()

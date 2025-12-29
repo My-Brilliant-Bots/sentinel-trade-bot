@@ -10,7 +10,7 @@ import os
 import json
 import logging
 
-from prompts import technical_analyst_prompt, risk_manager_system_prompt, options_strategist_system_prompt, data_clerk_system_prompt, report_agent_system_prompt
+from prompts import technical_analyst_prompt, risk_manager_system_prompt, options_strategist_system_prompt, data_clerk_system_prompt, report_agent_system_prompt, senior_analyst_review_prompt
 
 from ragQuery import augment_query_with_context
 
@@ -42,12 +42,8 @@ class TradeSignal(BaseModel):
 
 class StockRecommendAgent:
 
-  def __init__(self,api_key_name:str,model_name:str, api_type=None):
-    self.api_key_name = api_key_name
-    self.model_name = model_name
-    self.api_type=api_type
-
-  def create_openai_client(self):
+  
+  def create_openai_client(self,api_key_name:str,model_name:str, api_type=None):
     
     # 1. Define base configs for specific providers
     api_configs = {
@@ -79,7 +75,7 @@ class StockRecommendAgent:
 
     # 2. Start with common arguments used by EVERY client
     client_args = {
-        "model": os.environ.get(self.model_name),
+        "model": os.environ.get(model_name),
         "response_format": TradeSignal,
         "model_info": ModelInfo(
             vision=True, 
@@ -91,50 +87,66 @@ class StockRecommendAgent:
     }
 
     # 3. Add provider-specific settings (base_url, etc.)
-    provider_settings = api_configs.get(self.api_type, {})
+    provider_settings = api_configs.get(api_type, {})
     client_args.update(provider_settings)
 
     logging.debug(f"LLM Provider Settings : {client_args}")
 
     # 4. Logic for API Key: Skip only for Ollama
-    if self.api_type == "ollama":
+    if api_type == "ollama":
         client_args["api_key"] = "not-required" # Local servers often ignore this
     else:
         # Require key from environment for all others
-        client_args["api_key"] = os.environ.get(self.api_key_name)
+        client_args["api_key"] = os.environ.get(api_key_name)
 
     return OpenAIChatCompletionClient(**client_args)
 
 
   def create_trading_team(self):
-    model_client=self.create_openai_client()
+    cerebras_model_client=self.create_openai_client("CEREBRAS_API_KEY", "CAREBRAS_LLM_MODEL", "cerebras")
+    open_router_model_client=self.create_openai_client("OPENROUTER_API_KEY", "OPENROUTER_LLM_MODEL", "openrouter")
+    groq_model_client=self.create_openai_client("GROQ_API_KEY", "GROQ_LLM_MODEL", "groq")
 
-    analyst = AssistantAgent(
-    name="Technical_Analyst",
-    model_client=model_client,
+    analyst_1 = AssistantAgent(
+    name="Technical_Analyst_1",
+    model_client=cerebras_model_client,
+    reflect_on_tool_use=True,
+    system_message=technical_analyst_prompt
+    )
+
+    analyst_2 = AssistantAgent(
+    name="Technical_Analyst_2",
+    model_client=groq_model_client,
     reflect_on_tool_use=True,
     system_message=technical_analyst_prompt
     )
 
     # 3. The Options Strategist: Finds a derivative play
-    options_agent = AssistantAgent(
-        name="Options_Strategist",
-        model_client=model_client,
+    options_agent_1 = AssistantAgent(
+        name="Options_Strategist_1",
+        model_client=cerebras_model_client,
+        reflect_on_tool_use=True,
+        system_message=options_strategist_system_prompt
+    )
+
+    options_agent_2 = AssistantAgent(
+        name="Options_Strategist_2",
+        model_client=groq_model_client,
         reflect_on_tool_use=True,
         system_message=options_strategist_system_prompt
     )
 
     # Configure the Finalizer Agent
-    data_clerk = AssistantAgent(
+    senior_analyst = AssistantAgent(
         name="Data_Clerk",
-        model_client=model_client,
-        system_message=data_clerk_system_prompt
+        model_client=open_router_model_client,
+        system_message=senior_analyst_review_prompt
     )
     
     """Create a fresh trading team instance with reset conversation history."""
     return RoundRobinGroupChat(
-        participants=[analyst, options_agent, data_clerk],
-        max_turns=3)
+        participants=[analyst_1, options_agent_1, analyst_2, options_agent_2,senior_analyst],
+        max_turns=5)
 
   async def recommend_trades( self,symbol_to_analyze, skip_execution:bool=True ):
     # Create a fresh team instance to reset conversation history
