@@ -1,13 +1,15 @@
-import gradio as gr
 import asyncio
-import json
 from datetime import datetime
-from typing import List, Dict
+import json
 import logging
+from typing import Dict, List
 
-# Ensure these imports match your actual file structure
-from stock_recommend_agent import StockRecommendAgent
+import gradio as gr
+import markdown
+
 from logging_config import get_logger
+from ragQuery import augment_query_with_context
+from stock_recommend_agent import StockRecommendAgent
 
 logging = get_logger(__name__)
 
@@ -115,14 +117,15 @@ class TradingBotUI:
         return html
     
     def format_agent_message(self, agent_name: str, message: str, timestamp: str) -> str:
-        """Format individual agent message, converting JSON to readable tables"""
+        """Format individual agent message, converting JSON to tables or Markdown to HTML"""
         
         agent_colors = {
             "Technical_Analyst_1": "#007bff",
             "Technical_Analyst_2": "#17a2b8",
             "Options_Strategist_1": "#28a745",
             "Options_Strategist_2": "#20c997",
-            "Senior_Analyst": "#dc3545"
+            "Senior_Analyst": "#dc3545",
+            "User": "#6f42c1" # Added a color for User
         }
         color = agent_colors.get(agent_name, "#6c757d")
         
@@ -131,41 +134,38 @@ class TradingBotUI:
             "Technical_Analyst_2": "📊",
             "Options_Strategist_1": "📈",
             "Options_Strategist_2": "💹",
-            "Senior_Analyst": "👔"
+            "Senior_Analyst": "👔",
+            "User": "👤" # Added emoji for User
         }
         emoji = emoji_map.get(agent_name, "🤖")
 
         formatted_content = message
-        try:
-            # Clean up potential markdown wrappers
-            clean_msg = message.strip()
-            if clean_msg.startswith("```json"): clean_msg = clean_msg[7:]
-            if clean_msg.startswith("```"): clean_msg = clean_msg[3:]
-            if clean_msg.endswith("```"): clean_msg = clean_msg[:-3]
-            
-            data = json.loads(clean_msg.strip())
-            
-            # If successful, build an HTML table
-            if isinstance(data, dict):
-                table_rows = ""
-                for key, value in data.items():
-                    clean_key = key.replace('_', ' ').title()
-                    table_rows += f"""
-                        <tr style="border-bottom: 1px solid #eee;">
-                            <td style="padding: 4px 8px; font-weight: bold; color: #555;">{clean_key}</td>
-                            <td style="padding: 4px 8px; color: #333;">{value}</td>
-                        </tr>
-                    """
-                formatted_content = f"""
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px; background: white; border-radius: 4px; overflow: hidden;">
-                    {table_rows}
-                </table>
-                """
-            elif isinstance(data, list):
-                formatted_content = f"<pre style='background: white; padding: 10px; border-radius: 5px;'>{json.dumps(data, indent=2)}</pre>"
+        
+        # --- NEW LOGIC FOR USER (MARKDOWN) ---
+        if agent_name.lower() == "user":
+            # Convert Markdown string to HTML
+            formatted_content = markdown.markdown(message)
+        else:
+            # --- EXISTING LOGIC FOR AGENTS (JSON TO TABLE) ---
+            try:
+                clean_msg = message.strip()
+                if clean_msg.startswith("```json"): clean_msg = clean_msg[7:]
+                if clean_msg.startswith("```"): clean_msg = clean_msg[3:]
+                if clean_msg.endswith("```"): clean_msg = clean_msg[:-3]
                 
-        except (json.JSONDecodeError, AttributeError):
-            formatted_content = message
+                data = json.loads(clean_msg.strip())
+                
+                if isinstance(data, dict):
+                    table_rows = "".join([
+                        f"<tr style='border-bottom: 1px solid #eee;'>"
+                        f"<td style='padding: 4px 8px; font-weight: bold; color: #555;'>{k.replace('_', ' ').title()}</td>"
+                        f"<td style='padding: 4px 8px; color: #333;'>{v}</td></tr>" 
+                        for k, v in data.items()
+                    ])
+                    formatted_content = f"<table style='width: 100%; border-collapse: collapse; font-size: 13px; background: white;'>{table_rows}</table>"
+            except (json.JSONDecodeError, AttributeError):
+                # Fallback: Treat as Markdown even for agents if it's not valid JSON
+                formatted_content = markdown.markdown(message)
 
         html = f"""
         <div style="border-left: 4px solid {color}; padding: 10px; margin: 10px 0; background: #f8f9fa; border-radius: 5px;">
@@ -173,13 +173,13 @@ class TradingBotUI:
                 <strong style="color: {color}; font-size: 16px;">{emoji} {agent_name}</strong>
                 <span style="color: #6c757d; font-size: 12px;">{timestamp}</span>
             </div>
-            <div style="color: #333; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.5;">
+            <div class="message-body" style="color: #333; font-family: sans-serif; font-size: 14px; line-height: 1.5;">
                 {formatted_content}
             </div>
         </div>
         """
         return html
-    
+
     def _wrap_scrollable(self, content: str) -> str:
         """Helper to wrap content in a scrollable div"""
         return f"""
@@ -209,9 +209,10 @@ class TradingBotUI:
             progress(0.1, desc="Preparing analysis task...")
             # Note: Ensure ragQuery and augment_query_with_context are importable
             try:
-                from ragQuery import augment_query_with_context
-                task = f"""Analyze and recommend suitable trades for: {symbol}.
-Provide:
+                
+                task = f"""
+### Analyze and recommend suitable trades for: {symbol}.
+### Provide:
 - Current entry price (use actual market data)
 - Stop loss and take profit levels
 - Stock recommendation strategy and reasoning

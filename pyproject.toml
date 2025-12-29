@@ -17,6 +17,7 @@ dependencies = [
     "requests>=2.32.5",
     "groq>=1.0.0",
     "gradio>=6.2.0",
+    "markdown>=3.10",
 ]
 
 [tool.uv]

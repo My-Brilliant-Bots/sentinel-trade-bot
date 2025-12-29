@@ -83,15 +83,25 @@ def augment_query_with_context(symbol:str,query:str):
     """
     
     augmented_prompt = f"""
-    Answer the question and recommend entry/exit points using either 
-    1. Connors RSI 2, or
-    2. RSI Divergence or 
-    3. 50-Crossover signals, 
-    
-    Choose the appropiate Momentum Strategy based on the data provided in {knowledge_base} .
-    Question: {query}
+# TASK: Stock Analysis & Trading Strategy Recommendation
 
-    Provide a concise answer about the stock and option recommendations. If the information appears outdated or unclear, mention that in your response."""
+## CONTEXT & KNOWLEDGE BASE
+{knowledge_base}
+
+## USER QUERY
+{query}
+
+### INSTRUCTIONS
+Based on the data provided, analyze the stock and recommend entry/exit points using **only one** of the following Momentum Strategies:
+1. **Connors RSI 2**
+2. **RSI Divergence**
+3. **50-Crossover Signals**
+
+### OUTPUT REQUIREMENTS
+- Provide a concise answer for both **Stock** and **Option** recommendations.
+- If the information provided is outdated or unclear, you **must** explicitly mention this in your response.
+- Format your response using clear headers and bullet points.
+"""
 
     logging.debug("**** Final Prompt")
     logging.debug("")
