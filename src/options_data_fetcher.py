@@ -1,8 +1,9 @@
-from typing import Dict, List
 from datetime import datetime, timedelta
-import yfinance as yf
-import pandas as pd
 import logging
+from typing import Dict, List
+
+import pandas as pd
+import yfinance as yf
 
 
 class OptionsDataFetcher:

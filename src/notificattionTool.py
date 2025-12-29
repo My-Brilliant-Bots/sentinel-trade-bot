@@ -1,8 +1,10 @@
-import smtplib
 from email.message import EmailMessage
-import os
-import requests
 import logging
+import os
+import smtplib
+
+import requests
+
 from logging_config import get_logger
 
 logging = get_logger(__name__)

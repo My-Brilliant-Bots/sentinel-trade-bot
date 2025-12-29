@@ -1,14 +1,15 @@
-from re import S
-import requests
-import numpy as np
 from datetime import datetime
-import os
-from data_fetcher import StockDataFetcher
-from options_data_fetcher import  OptionsDataFetcher
-from options_strategy import OptionsStrategy
 import logging
+import os
+from re import S
 
+import numpy as np
+import requests
+
+from data_fetcher import StockDataFetcher
 from logging_config import get_logger
+from options_data_fetcher import OptionsDataFetcher
+from options_strategy import OptionsStrategy
 
 logging = get_logger(__name__)
 

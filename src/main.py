@@ -38,34 +38,22 @@ async def run_agentic_analysis():
     logging.debug(f"Analyzing symbols: {trending_symbols}")
     
     all_signals_for_report = []
+
+    trade_recommendation_agent = StockRecommendAgent()
     
-    # Initialize agents. 
-    #model1_recommendation_engine = StockRecommendAgent()
-
-    model1_recommendation_engine = StockRecommendAgent()
-    #model1_recommendation_engine = StockRecommendAgent()
-
-    #model1_recommendation_engine = StockRecommendAgent()
-
     for i, symbol in enumerate(trending_symbols):
-        # Run recommendations in parallel
-        #gemini_stock_recommendation, cerebras_stock_recommendation = await asyncio.gather(
-        #    gemini_recommendation_agent.recommend_trades(symbol),
-        #    carebras_recommendation_agent.recommend_trades(symbol),
-        #    return_exceptions=True
-        #)
 
-        # Set skip_llm to True while debugging code that does not need LLM invocation.
+        # Set skip_llm to True while debugging code that does not need LLM interaction.
         skip_llm:bool = False
         logging.debug(f"Start Recommendation for {symbol} ")
-        model1_stock_recommendation = await model1_recommendation_engine.recommend_trades(symbol,skip_llm)
+        trade_recommendation = await trade_recommendation_agent.recommend_trades(symbol,skip_llm)
         logging.debug(f"End Recommendation for {symbol} ")
        
-        # Process Gemini result
-        if isinstance(model1_stock_recommendation, str):
-            gemini_clean_json = model1_stock_recommendation.replace("```json", "").replace("```", "").strip()
-            logging.debug(f"Recommendation is {gemini_clean_json}")
-            all_signals_for_report.append(gemini_clean_json)
+        # Process the recommendation
+        if isinstance(trade_recommendation, str):
+            recommendation_json = trade_recommendation.replace("```json", "").replace("```", "").strip()
+            logging.debug(f"Recommendation is {recommendation_json}")
+            all_signals_for_report.append(recommendation_json)
         
 
         if i < len(trending_symbols) - 1:  

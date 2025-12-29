@@ -1,20 +1,22 @@
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+import json
+import logging
+import os
+from typing import Optional
+
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_core.models import ModelInfo
+from autogen_ext.models.openai import OpenAIChatCompletionClient
 from openai import RateLimitError
-
 from pydantic import BaseModel
-from typing import Optional
-import os
-import json
-import logging
-
-from prompts import technical_analyst_prompt, risk_manager_system_prompt, options_strategist_system_prompt, data_clerk_system_prompt, report_agent_system_prompt, senior_analyst_review_prompt
-
-from ragQuery import augment_query_with_context
 
 from logging_config import get_logger
+from prompts import (
+   options_strategist_system_prompt,
+   senior_analyst_review_prompt,
+   technical_analyst_prompt,
+)
+from ragQuery import augment_query_with_context
 
 logging = get_logger(__name__)
 
@@ -107,6 +109,8 @@ class StockRecommendAgent:
     open_router_model_client=self.create_openai_client("OPENROUTER_API_KEY", "OPENROUTER_LLM_MODEL", "openrouter")
     groq_model_client=self.create_openai_client("GROQ_API_KEY", "GROQ_LLM_MODEL", "groq")
 
+    # Technical_Analyst_1 & Technical_Analyst_1 use two different LLM models hosted on different providers
+    # to analyse the same stock
     analyst_1 = AssistantAgent(
     name="Technical_Analyst_1",
     model_client=cerebras_model_client,
@@ -121,7 +125,8 @@ class StockRecommendAgent:
     system_message=technical_analyst_prompt
     )
 
-    # 3. The Options Strategist: Finds a derivative play
+    # Options_Strategist_1 & Options_Strategist_2 use two different LLM models hosted on different providers
+    # to analyse the same stock
     options_agent_1 = AssistantAgent(
         name="Options_Strategist_1",
         model_client=cerebras_model_client,
@@ -136,9 +141,9 @@ class StockRecommendAgent:
         system_message=options_strategist_system_prompt
     )
 
-    # Configure the Finalizer Agent
+    # Senior_Analyst uses a third LLM to review the results from the first two LLMs
     senior_analyst = AssistantAgent(
-        name="Data_Clerk",
+        name="Senior_Analyst",
         model_client=open_router_model_client,
         system_message=senior_analyst_review_prompt
     )
@@ -196,13 +201,13 @@ class StockRecommendAgent:
       result = await trading_team.run(task=augemented_query)
       logging.debug("Trading Team End")
       
-      # Get the last message content (from the Data_Clerk) - should be a JSON array
+      # Get the last message content (from the Senior_Analyst) - should be a JSON array
       response = result.messages[-1].content
-      logging.debug(f"\nFinal message from Data_Clerk:\n{response}\n")
+      logging.debug(f"\nFinal message from Senior_Analyst:\n{response}\n")
     
       return response
     except RateLimitError as rateLimitError :
-      logging.error(f"An unexpected error occurred: Rate Limit Exceeded: {rateLimitError}")
+      logging.error(f"An error occurred: Rate Limit Exceeded: {rateLimitError}")
       return response
     except Exception as e:
       logging.error(f"An unexpected error occurred: {e}")

@@ -2,15 +2,17 @@
 Data fetcher module using yfinance for fast, reliable data retrieval
 No rate limits, much faster than Alpha Vantage
 """
-import sys
-import yfinance as yf
-import pandas as pd
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-import pandas_ta as ta
-import numpy as np
-import requests
 import logging
+import sys
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+import pandas_ta as ta
+import requests
+import yfinance as yf
+
 from logging_config import get_logger
 
 logging = get_logger(__name__)
