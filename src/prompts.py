@@ -125,8 +125,7 @@ report_agent_system_prompt="""
         Symbol,Entry Price, Stop Loss, Take Profit, Confidence Score, Stock Recommendation Strategy,Stock Recommendation Reasoning
     
     Each option in the option recommendation section should hae the following fields:
-        Symbol,Option Recommendation Strategy, Option Recommendation Reasoning,Option Strike Price, Option Expiration Date,
-        Option Type, Option Contract
+        Symbol,Option Strike Price, Option Expiration Date,Option Type, Option Contract, Option Recommendation Strategy, Option Recommendation Reasoning
 
     The report should be sent in an email using the provided email tool. The subject of the email should be: Stock and Option Recommendations.
     Once the email has been sent successfully, send an SMS notification using the sms tool provided 

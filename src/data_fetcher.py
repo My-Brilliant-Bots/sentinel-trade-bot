@@ -111,6 +111,7 @@ class StockDataFetcher:
             # LLM Prompt: Structured JSON + Narrative Text
             llm_prompt = {
                 "data_type": "enhanced_stock_analysis",
+                "description": "Summarized stock information with technical indicators",
                 "symbol": symbol,
                 "price": float(latest['Close']),
                 "prev_price": float(prev['Close']),
@@ -134,7 +135,6 @@ class StockDataFetcher:
                 MACD histogram: {latest[macd_h_col]:.3f}, indicating {'bullish momentum' if latest[macd_h_col] > 0 else 'bearish momentum'}.
                 Market cap: {info.get('marketCap', 'N/A')}, sector: {info.get('sector', 'N/A')}.
                 Historical context: Over the last 30 days, average volatility (ATR-14): {hist['ATR_14'].tail(30).mean():.2f}, max close: {hist['Close'].tail(30).max():.2f}.
-                Analysis: Recommend caution—backtest these signals. This data is for informational purposes only; consult a financial advisor.
                 """.strip()
             }
 
@@ -154,7 +154,7 @@ class StockDataFetcher:
                 "volume_ratio": float(latest['Volume_Ratio']) if not pd.isna(latest['Volume_Ratio']) else 1.0,
                 "market_cap": info.get('marketCap'),
                 "sector": info.get('sector'),
-                "history": hist[['Close', 'Open', 'High', 'Low', 'Volume', 'SMA_50', 'RSI_14', macd_h_col]].to_dict('records'),  # JSON-friendly; last 60 days
+                #"history": hist[['Close', 'Open', 'High', 'Low', 'Volume', 'SMA_50', 'RSI_14', macd_h_col]].to_dict('records'),  # JSON-friendly; last 60 days
                 "llm_prompt": llm_prompt
             }
 
@@ -333,7 +333,7 @@ class StockDataFetcher:
                 logging.debug(f"Volume ratio for {symbol} is {volume_ratio}")
                 
                 # Only include stocks with significant activity
-                if volume_ratio > 0.7:  # 50% above average volume
+                if volume_ratio > 0.7 or symbol == "SPY":  # 50% above average volume
                     trending.append({
                         'symbol': symbol,
                         'volume_ratio': volume_ratio,

@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime
 import os
 from data_fetcher import StockDataFetcher
+from options_data_fetcher import  OptionsDataFetcher
 from options_strategy import OptionsStrategy
 import logging
 
@@ -61,12 +62,22 @@ def get_market_data(symbol: str) -> str:
     
 def augment_query_with_context(symbol:str,query:str):
     stock_details = get_market_data(symbol)
-    option_details = get_options_chain_tool(symbol)
+
+    current_price = stock_details['price']
+
+    options_fetcher = OptionsDataFetcher()
+
+    options_text = options_fetcher.get_options_for_llm(
+        symbol=symbol,
+        current_price=current_price
+    )
+
+    #option_details = get_options_chain_tool(symbol)
 
     knowledge_base = f"""
       Stock details for {symbol}: {stock_details}
 
-      Option details for {symbol}: {option_details}
+      Option details for {symbol}: {options_text}
 
     """
     
@@ -81,4 +92,9 @@ def augment_query_with_context(symbol:str,query:str):
 
     Provide a concise answer about the stock and option recommendations. If the information appears outdated or unclear, mention that in your response."""
 
+    logging.debug("**** Final Prompt")
+    logging.debug("")
+    logging.debug(augmented_prompt)
+    logging.debug("")
+    
     return augmented_prompt

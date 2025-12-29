@@ -2,6 +2,7 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_core.models import ModelInfo
+from openai import RateLimitError
 
 from pydantic import BaseModel
 from typing import Optional
@@ -69,7 +70,11 @@ class StockRecommendAgent:
                 "X-Title": "StockAnalysisBot",           # Name of your bot
                 "transforms": json.dumps([])             # Disables OpenRouter's auto-compression
             }
-        }
+        },
+        "groq": {
+            "api_type": "groq",
+            "base_url": "https://api.groq.com/openai/v1"
+        },
     }
 
     # 2. Start with common arguments used by EVERY client
@@ -131,7 +136,7 @@ class StockRecommendAgent:
         participants=[analyst, options_agent, data_clerk],
         max_turns=3)
 
-  async def recommend_trades( self,symbol_to_analyze ):
+  async def recommend_trades( self,symbol_to_analyze, skip_execution:bool=True ):
     # Create a fresh team instance to reset conversation history
     trading_team = self.create_trading_team()
     
@@ -147,29 +152,48 @@ class StockRecommendAgent:
 
         Process ALL symbols and provide recommendations for each one.
     """
-
+    
     augemented_query = augment_query_with_context(symbol_to_analyze,task)
 
-    final_msg = """
-    ```json
-    ```
+    response = f"""
+    {{
+      "symbol": "{symbol_to_analyze}",
+      "entry_price": 0,
+      "stop_loss": 0,
+      "take_profit": 0,
+      "confidence_score": 0,
+      "shares": 0,
+      "stock_recommendation_strategy": "NO TRADE",
+      "stock_recommendation_reasoning": "NO TRADE",
+      "option_recommendation_strategy": "NO TRADE",
+      "option_recommendation_reasoning": "NO TRADE",
+      "option_strike": 0,
+      "option_expiration_date": "N/A",
+      "option_type": "N/A",
+      "option_contract": "NO TRADE"
+    }}
     """
+
+    if (skip_execution):
+      logging.debug("Skipping LLM calls. Returning canned response")
+      return response
+
+    logging.debug("Trading Team Start")
+    
     try:
-      logging.debug("Trading Team Start")
       result = await trading_team.run(task=augemented_query)
       logging.debug("Trading Team End")
       
-      # Print all messages for debugging
-      #for i, message in enumerate(result.messages):
-      #    print(f"[{i+1}] {message.source}: {message.content}")
-      
       # Get the last message content (from the Data_Clerk) - should be a JSON array
-      final_msg = result.messages[-1].content
-      logging.debug(f"\nFinal message from Data_Clerk:\n{final_msg}\n")
-    except ValueError as ve:
-      logging.error(f"Trading Team Error {type(ve).__name__} - {ve} ")
-    except Exception as e:
-      logging.error(f"Trading Team Error {type(e).__name__} - {e} ")
+      response = result.messages[-1].content
+      logging.debug(f"\nFinal message from Data_Clerk:\n{response}\n")
     
-    return final_msg
+      return response
+    except RateLimitError as rateLimitError :
+      logging.error(f"An unexpected error occurred: Rate Limit Exceeded: {rateLimitError}")
+      return response
+    except Exception as e:
+      logging.error(f"An unexpected error occurred: {e}")
+      return response
+       
   
