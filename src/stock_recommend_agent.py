@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_core.models import ModelInfo
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core.tools import FunctionTool
 from openai import RateLimitError
 from pydantic import BaseModel
 
@@ -17,8 +19,12 @@ from prompts import (
    technical_analyst_prompt,
 )
 from ragQuery import augment_query_with_context
+from search_tool import SearchTool
+from data_fetcher import StockDataFetcher
+from pydantic import BaseModel
 
 logging = get_logger(__name__)
+
 
 class TradeSignal(BaseModel):
     symbol: str
@@ -27,6 +33,7 @@ class TradeSignal(BaseModel):
     take_profit: float
     confidence_score: float
     shares: int
+    market_research: Optional[str] = None
     
     # Stock recommendation fields
     stock_recommendation_strategy: str  # e.g., "BUY", "SELL", "HOLD", "NO TRADE"
@@ -83,7 +90,7 @@ class StockRecommendAgent:
             vision=True, 
             function_calling=True, 
             json_output=True, 
-            family="unknown", 
+            family="unknown",
             structured_output=True
         )
     }
@@ -105,24 +112,44 @@ class StockRecommendAgent:
 
 
   def create_trading_team(self):
+    
+    research_tool = FunctionTool(
+      self.deep_market_research, 
+      strict=True,
+      description="Provides a comprehensive 3-tier market report for any stock ticker.")
+
     cerebras_model_client=self.create_openai_client("CEREBRAS_API_KEY", "CAREBRAS_LLM_MODEL", "cerebras")
-    open_router_model_client=self.create_openai_client("OPENROUTER_API_KEY", "OPENROUTER_LLM_MODEL", "openrouter")
+    open_router_finance_model_client=self.create_openai_client("OPENROUTER_API_KEY", "OPENROUTER_FINANCE_LLM_MODEL", "openrouter")
+    open_router_general_purpose_model_client=self.create_openai_client("OPENROUTER_API_KEY", "OPENROUTER_LLM_MODEL", "openrouter")
     groq_model_client=self.create_openai_client("GROQ_API_KEY", "GROQ_LLM_MODEL", "groq")
+
+    market_researcher = AssistantAgent(
+      name="Market_Researcher",
+      model_client=open_router_general_purpose_model_client,
+      tools=[research_tool],
+      reflect_on_tool_use=True,
+      system_message="""You provide the foundational facts for the trading team.
+      When a ticker is provided, run the deep_market_research tool.
+      Summarize the findings into: 
+      1. Direct Ticker News 
+      2. Sector/Commodity Health 
+      3. Macro Sentiment."""
+    )
 
     # Technical_Analyst_1 & Technical_Analyst_1 use two different LLM models hosted on different providers
     # to analyse the same stock
     analyst_1 = AssistantAgent(
-    name="Technical_Analyst_1",
-    model_client=cerebras_model_client,
-    reflect_on_tool_use=True,
-    system_message=technical_analyst_prompt
+      name="Technical_Analyst_1",
+      model_client=cerebras_model_client,
+      reflect_on_tool_use=True,
+      system_message=technical_analyst_prompt
     )
 
     analyst_2 = AssistantAgent(
-    name="Technical_Analyst_2",
-    model_client=groq_model_client,
-    reflect_on_tool_use=True,
-    system_message=technical_analyst_prompt
+      name="Technical_Analyst_2",
+      model_client=groq_model_client,
+      reflect_on_tool_use=True,
+      system_message=technical_analyst_prompt
     )
 
     # Options_Strategist_1 & Options_Strategist_2 use two different LLM models hosted on different providers
@@ -144,14 +171,14 @@ class StockRecommendAgent:
     # Senior_Analyst uses a third LLM to review the results from the first two LLMs
     senior_analyst = AssistantAgent(
         name="Senior_Analyst",
-        model_client=open_router_model_client,
+        model_client=open_router_finance_model_client,
         system_message=senior_analyst_review_prompt
     )
     
     """Create a fresh trading team instance with reset conversation history."""
     return RoundRobinGroupChat(
-        participants=[analyst_1, options_agent_1, analyst_2, options_agent_2,senior_analyst],
-        max_turns=5)
+        participants=[market_researcher,analyst_1, options_agent_1, analyst_2, options_agent_2,senior_analyst],
+        max_turns=6)
 
   async def recommend_trades( self,symbol_to_analyze, skip_execution:bool=True ):
     # Create a fresh team instance to reset conversation history
@@ -212,5 +239,57 @@ class StockRecommendAgent:
     except Exception as e:
       logging.error(f"An unexpected error occurred: {e}")
       return response
+  
+  def deep_market_research(self,symbol: str) -> str:
+    """
+    Performs a 3-tier web search to gather market context for a stock.
+
+    Args:
+        symbol (str): The stock ticker symbol (e.g., 'FCX', 'NVDA').
+    """
+
+    # Initialize your SearchTool class instance inside or globally
+    # Using the searcher we built with Tenacity retries
+    searcher = SearchTool(max_results=3) 
+    
+    # Generate the queries 
+    data_fetcher = StockDataFetcher()
+    print(f"Symbol to search is {symbol}")
+    queries = data_fetcher.generate_search_queries(symbol=symbol)
+    
+    results = []
+    
+    for q in queries:
+        try:
+            # Executes with your built-in retry logic
+            data = searcher.search(q)
+            results.append(f"### Query: {q}\n{data}")
+        except Exception as e:
+            results.append(f"### Query: {q}\nError fetching data: {str(e)}")
+
+    # Return as formatted string, NOT as Pydantic model
+    report = f"""
+      MARKET RESEARCH REPORT FOR {symbol}
+      {'='*80}
+
+      {chr(10).join(results)}
+
+      {'='*80}
+      End of Market Research Report
+      """
+    
+    return report
+
+def test_tool():
+      agent = StockRecommendAgent()
+      tool = agent.deep_market_research
+      result = tool("AAPL")
+      print(f"Tool output: {result}...")  # Check for valid structure
+      # Try parsing as JSON if you convert it later
+
+
+if __name__ == "__main__":
+    test_tool()
+  
        
   

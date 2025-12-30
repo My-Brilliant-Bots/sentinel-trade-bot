@@ -372,3 +372,50 @@ class StockDataFetcher:
             return ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'META', 'TSLA',
                     'JPM', 'JNJ', 'V', 'PG', 'MA', 'HD', 'CVX', 'MRK', 'ABBV', 'PEP']
 
+    def generate_search_queries(self,symbol: str) -> List[str]:
+        """
+        Identifies stock sector and returns a List of 3 targeted search strings.
+        """
+        # 1. Default fallback values
+        sector = "General"
+        industry = "General"
+        
+        try:
+            # 2. Fetch Ticker info
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            sector = info.get('sector', 'General')
+            industry = info.get('industry', 'General')
+        except Exception:
+            # Fallback if yfinance fetch fails
+            pass
+
+        # 3. Sector-to-Driver Map
+        sector_drivers = {
+            "Technology": "Semiconductor lead times and AI software demand",
+            "Financial Services": "US Treasury yield curve and regional bank health",
+            "Energy": "WTI Crude Oil prices and OPEC production updates",
+            "Basic Materials": "Copper, Gold, and Iron Ore spot prices and China PMI",
+            "Healthcare": "FDA drug approval calendar and healthcare policy news",
+            "Consumer Cyclical": "Consumer spending data and retail earnings sentiment",
+            "Communication Services": "Digital ad spend trends and streaming subscriber growth",
+            "Utilities": "Interest rate sensitivity and natural gas storage reports",
+            "Consumer Defensive": "Consumer staples inflation and grocery pricing trends"
+        }
+        
+        # Select the driver based on sector
+        driver = sector_drivers.get(sector, f"{sector} {industry} industry trends")
+        
+        # 4. Construct the List
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        queries = [
+            f"{symbol} stock news catalysts and analyst ratings last 24 hours",
+            f"Current price trend of {driver} today {today}",
+            f"S&P 500 VIX and FOMC market sentiment report for {today}"
+        ]
+        
+        return queries  # Strictly returning a List[str]
+
+
+

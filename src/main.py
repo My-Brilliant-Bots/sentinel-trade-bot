@@ -46,7 +46,11 @@ async def run_agentic_analysis():
         # Set skip_llm to True while debugging code that does not need LLM interaction.
         skip_llm:bool = False
         logging.debug(f"Start Recommendation for {symbol} ")
-        trade_recommendation = await trade_recommendation_agent.recommend_trades(symbol,skip_llm)
+        try:
+            trade_recommendation = await trade_recommendation_agent.recommend_trades(symbol,skip_llm)
+        except Exception as e:
+             logging.debug(f"Skip Recommendation for {symbol} because of {e} error")
+             continue
         logging.debug(f"End Recommendation for {symbol} ")
        
         # Process the recommendation

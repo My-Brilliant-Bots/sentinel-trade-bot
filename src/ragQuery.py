@@ -70,7 +70,9 @@ def augment_query_with_context(symbol:str,query:str):
 
     options_text = options_fetcher.get_options_for_llm(
         symbol=symbol,
-        current_price=current_price
+        current_price=current_price,
+        max_dte=60,
+        max_exps=6
     )
 
     #option_details = get_options_chain_tool(symbol)
