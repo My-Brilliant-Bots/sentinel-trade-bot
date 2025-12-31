@@ -33,6 +33,17 @@ class TradeSignal(BaseModel):
     option_type: Optional[str] = None  # "call" or "put"
     option_contract: Optional[str] = None  # Formatted contract string (e.g., "NKE 60 CALL 2025-01-17" or "NKE $60 Put Jan 17, 2025")
 
+    #Volatility Fields
+    implied_volatility: Optional[float] = None     # IV at time of entry (e.g., 0.35 for 35%)
+    historical_volatility: Optional[float] = None  # HV (e.g., 20-day or 30-day realized)
+    
+    # The Greeks
+    delta: Optional[float] = None  # Sensitivity to underlying price
+    gamma: Optional[float] = None  # Sensitivity of Delta to underlying price
+    theta: Optional[float] = None  # Time decay (daily)
+    vega: Optional[float] = None   # Sensitivity to IV changes
+    rho: Optional[float] = None    # Sensitivity to interest rates
+
 class ModelClientRegistry:
     # Singleton storage
     _instances = {}

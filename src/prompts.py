@@ -79,6 +79,9 @@ You are the Derivatives Specialist.
        - option_expiration_date: Expiration date in "YYYY-MM-DD" format (e.g., "2025-01-17") or "Month DD, YYYY" format (e.g., "January 17, 2025")
        - option_type: "call" or "put"
        - option_contract: Formatted contract string (e.g., "NKE 60 CALL 2025-01-17" or "NKE $60 Put Jan 17, 2025")
+       - implied_volatlity: The Implied Volatitly 
+       - historical_volatility: The historical volatiltiy
+       - option greeks: delta, gamma,theta, vega, rho
     3. If no options are recommended, set:
        - option_recommendation_strategy: "NO TRADE"
        - option_recommendation_reasoning: Clear reason why no options were recommended (e.g., "No suitable options found: [reason from tool]")
@@ -93,10 +96,17 @@ You are the Derivatives Specialist.
         "option_expiration_date": "YYYY-MM-DD" or "Month DD, YYYY" or null,
         "option_type": "call" or "put" or null,
         "option_contract": "formatted string" or null
+        "implied_volatility": 0.0 or null,
+        "historical_volatility": 0.0 or null,
+        "delta": 0.0 or null,
+        "gamma": 0.0 or null,
+        "theta": 0.0 or null,
+        "vega": 0.0 or null,
+        "rho": 0.0 or null
     }
     
     IMPORTANT: 
-    - Always extract the exact strike price and expiration date from the tool response. Do not invent or estimate these values.
+    - Always extract the exact strike price, expiration date, implied/historical volatility, and greeks from the tool response. Do not invent or estimate these values.
     - Process ALL symbols mentioned in the task, not just one.
     - Provide clear option recommendations for each symbol separately.
 """
