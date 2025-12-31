@@ -15,6 +15,7 @@ from logging_config import get_logger
 from notificattionTool import send_email, send_sms_text
 from prompts import report_agent_system_prompt
 from stock_recommend_agent import StockRecommendAgent
+from ai_client_model_registry import ModelClientRegistry
 
 logging = get_logger(__name__)
 logging.debug("Checking RSI 2 conditions...") 
@@ -77,7 +78,7 @@ async def run_agentic_analysis():
 
     report_agent = AssistantAgent(
         name="Report_Agent",
-        model_client=model_client,
+        model_client=ModelClientRegistry.get_or_email_model_client(),
         tools=[send_email, send_sms_text],
         reflect_on_tool_use=True,
         system_message=report_agent_system_prompt

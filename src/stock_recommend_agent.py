@@ -1,115 +1,29 @@
 import asyncio
-import json
 import logging
-import os
-from typing import Optional
 
 from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.teams import RoundRobinGroupChat
-from autogen_core.models import ModelInfo
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_core import CancellationToken
 from autogen_core.tools import FunctionTool
 from openai import RateLimitError
-from pydantic import BaseModel
 
+
+from ai_client_model_registry import ModelClientRegistry
+from data_fetcher import StockDataFetcher
 from logging_config import get_logger
 from prompts import (
    options_strategist_system_prompt,
    senior_analyst_review_prompt,
    technical_analyst_prompt,
+   market_researcher_prompt
 )
 from ragQuery import augment_query_with_context
 from search_tool import SearchTool
-from data_fetcher import StockDataFetcher
-from pydantic import BaseModel
 
 logging = get_logger(__name__)
 
-
-class TradeSignal(BaseModel):
-    symbol: str
-    entry_price: float
-    stop_loss: float
-    take_profit: float
-    confidence_score: float
-    shares: int
-    market_research: Optional[str] = None
-    
-    # Stock recommendation fields
-    stock_recommendation_strategy: str  # e.g., "BUY", "SELL", "HOLD", "NO TRADE"
-    stock_recommendation_reasoning: str  # Explanation for stock recommendation
-    
-    # Option recommendation fields
-    option_recommendation_strategy: str  # e.g., "Buy Long Call", "Buy Long Put", "Covered Call", "NO TRADE"
-    option_recommendation_reasoning: str  # Explanation for option recommendation
-    
-    # Option contract details (required if option_recommendation_strategy is not "NO TRADE")
-    option_strike: Optional[float] = None  # Strike price of the option (e.g., 60.0)
-    option_expiration_date: Optional[str] = None  # Expiration date in format "YYYY-MM-DD" or "Month DD, YYYY" (e.g., "2025-01-17" or "January 17, 2025")
-    option_type: Optional[str] = None  # "call" or "put"
-    option_contract: Optional[str] = None  # Formatted contract string (e.g., "NKE 60 CALL 2025-01-17" or "NKE $60 Put Jan 17, 2025")
-
 class StockRecommendAgent:
-
-  
-  def create_openai_client(self,api_key_name:str,model_name:str, api_type=None):
-    
-    # 1. Define base configs for specific providers
-    api_configs = {
-        "cerebras": {
-            "base_url": "https://api.cerebras.ai/v1", 
-            "api_type": "cerebras"
-        },
-        "ollama": {
-            "base_url": "http://localhost:11434/v1", 
-            "api_type": "ollama"
-        },
-        "ollama_docker": {
-            "base_url": "http://localhost:11434/v1", 
-            "api_type": "ollama"
-        },
-        "openrouter": {
-            "base_url": "https://openrouter.ai/api/v1", 
-            "default_headers": {
-                "HTTP-Referer": "http://localhost:3000", # Required for OpenRouter rankings
-                "X-Title": "StockAnalysisBot",           # Name of your bot
-                "transforms": json.dumps([])             # Disables OpenRouter's auto-compression
-            }
-        },
-        "groq": {
-            "api_type": "groq",
-            "base_url": "https://api.groq.com/openai/v1"
-        },
-    }
-
-    # 2. Start with common arguments used by EVERY client
-    client_args = {
-        "model": os.environ.get(model_name),
-        "response_format": TradeSignal,
-        "model_info": ModelInfo(
-            vision=True, 
-            function_calling=True, 
-            json_output=True, 
-            family="unknown",
-            structured_output=True
-        )
-    }
-
-    # 3. Add provider-specific settings (base_url, etc.)
-    provider_settings = api_configs.get(api_type, {})
-    client_args.update(provider_settings)
-
-    logging.debug(f"LLM Provider Settings : {client_args}")
-
-    # 4. Logic for API Key: Skip only for Ollama
-    if api_type == "ollama":
-        client_args["api_key"] = "not-required" # Local servers often ignore this
-    else:
-        # Require key from environment for all others
-        client_args["api_key"] = os.environ.get(api_key_name)
-
-    return OpenAIChatCompletionClient(**client_args)
-
 
   def create_trading_team(self):
     
@@ -118,22 +32,17 @@ class StockRecommendAgent:
       strict=True,
       description="Provides a comprehensive 3-tier market report for any stock ticker.")
 
-    cerebras_model_client=self.create_openai_client("CEREBRAS_API_KEY", "CAREBRAS_LLM_MODEL", "cerebras")
-    open_router_finance_model_client=self.create_openai_client("OPENROUTER_API_KEY", "OPENROUTER_FINANCE_LLM_MODEL", "openrouter")
-    open_router_general_purpose_model_client=self.create_openai_client("OPENROUTER_API_KEY", "OPENROUTER_LLM_MODEL", "openrouter")
-    groq_model_client=self.create_openai_client("GROQ_API_KEY", "GROQ_LLM_MODEL", "groq")
+    cerebras_model_client=ModelClientRegistry.get_cerebras_client()
+    open_router_finance_model_client=ModelClientRegistry.get_or_finance_client()
+    open_router_general_purpose_model_client=ModelClientRegistry.get_or_general_client()
+    groq_model_client=ModelClientRegistry.get_groq_client()
 
     market_researcher = AssistantAgent(
       name="Market_Researcher",
       model_client=open_router_general_purpose_model_client,
       tools=[research_tool],
       reflect_on_tool_use=True,
-      system_message="""You provide the foundational facts for the trading team.
-      When a ticker is provided, run the deep_market_research tool.
-      Summarize the findings into: 
-      1. Direct Ticker News 
-      2. Sector/Commodity Health 
-      3. Macro Sentiment."""
+      system_message=market_researcher_prompt
     )
 
     # Technical_Analyst_1 & Technical_Analyst_1 use two different LLM models hosted on different providers
@@ -267,6 +176,8 @@ class StockRecommendAgent:
         except Exception as e:
             results.append(f"### Query: {q}\nError fetching data: {str(e)}")
 
+    logging.debug(f"Market Research contents is {results}")
+
     # Return as formatted string, NOT as Pydantic model
     report = f"""
       MARKET RESEARCH REPORT FOR {symbol}
@@ -280,16 +191,39 @@ class StockRecommendAgent:
     
     return report
 
-def test_tool():
+async def test_tool():
       agent = StockRecommendAgent()
-      tool = agent.deep_market_research
-      result = tool("AAPL")
-      print(f"Tool output: {result}...")  # Check for valid structure
-      # Try parsing as JSON if you convert it later
+      research_tool = FunctionTool(
+      agent.deep_market_research, 
+      strict=True,
+      description="Provides a comprehensive 3-tier market report for any stock ticker.")
 
+      open_router_general_purpose_model_client=ModelClientRegistry.get_or_general_client()
+      market_researcher = AssistantAgent(
+        name="Market_Researcher",
+        model_client=open_router_general_purpose_model_client,
+        tools=[research_tool],
+        reflect_on_tool_use=True,
+        system_message="""You provide the foundational facts for the trading team.
+        When a ticker is provided, run the deep_market_research tool.
+        Summarize the findings into: 
+        1. Direct Ticker News 
+        2. Sector/Commodity Health 
+        3. Macro Sentiment."""
+      )
+      
+      message = TextMessage(
+        content="""
+        Research this stock . Symbol=AAPL
+        """, 
+        source="user"
+      )
+
+      response: TextMessage = await market_researcher.on_messages(messages=[message], cancellation_token=CancellationToken())
+      logging.debug(response.chat_message.content)
 
 if __name__ == "__main__":
-    test_tool()
+    asyncio.run(test_tool())
   
        
   
