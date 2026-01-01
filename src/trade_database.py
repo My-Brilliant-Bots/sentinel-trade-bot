@@ -168,17 +168,16 @@ class TradeDatabase:
 
     def get_live_portfolio_status(self):
         """
-        Fetches real-time market data for all open positions and prints a report.
-
-        Uses yfinance to pull live prices for stocks and the current option 
-        chain for option contracts to calculate live PnL and Implied Volatility.
-
-        Returns:
-            None (Prints a formatted table to stdout).
+        Generates a comprehensive financial status report with a Portfolio Summary.
+        
+        Outputs a detailed trade-by-trade table followed by an aggregate summary 
+        of realized vs. unrealized gains to assist Agent decision-making.
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            
+            # 1. Fetch live market data for open trades
             cursor.execute("SELECT * FROM trades WHERE status = 'OPEN'")
             open_trades = cursor.fetchall()
             
@@ -192,37 +191,64 @@ class TradeDatabase:
                         chain = ticker_obj.option_chain(trade['option_expiration_date'])
                         df = chain.calls if trade['option_type'].lower() == 'call' else chain.puts
                         contract_data = df[df['contractSymbol'] == occ_symbol]
-                        
                         if not contract_data.empty:
-                            live_data[occ_symbol] = {
-                                'price': contract_data['lastPrice'].values[0],
-                                'iv': contract_data['impliedVolatility'].values[0]
-                            }
+                            live_data[occ_symbol] = {'price': contract_data['lastPrice'].values[0]}
                     else:
                         live_data[symbol] = {'price': ticker_obj.fast_info['last_price']}
-                except Exception as e:
-                    print(f"Market Data Error for {symbol}: {e}")
+                except Exception:
+                    continue
 
-            cursor.execute("SELECT * FROM trades ORDER BY created_at DESC")
+            # 2. Fetch all trades for the report
+            cursor.execute("SELECT * FROM trades ORDER BY status DESC, created_at DESC")
             rows = cursor.fetchall()
             
-            header = f"{'Asset Identifier':<25} | {'Status':<7} | {'Price':<8} | {'IV %':<8} | {'PnL %'}"
+            header = (f"{'Asset Identifier':<22} | {'Type':<4} | {'Status':<7} | {'Opened':<10} | {'Closed':<10} | "
+                      f"{'Entry':<8} | {'Current':<8} | {'Qty':<4} | {'Total Cost':<10} | {'Curr Value':<10} | {'Total P/L':<9} | {'PnL %'}")
             print("\n" + header)
             print("-" * len(header))
             
+            # Summary Tracking Variables
+            total_invested = 0
+            current_equity = 0
+            realized_pnl = 0
+            unrealized_pnl = 0
+
             for row in rows:
-                asset_id = row['option_contract'] if row['option_contract'] else row['symbol']
+                is_opt = row['option_contract'] is not None
+                asset_id = row['option_contract'] if is_opt else row['symbol']
+                asset_type = "OPT" if is_opt else "STK"
+                multiplier = 100 if is_opt else 1
+                
+                # Pricing & Financials
+                qty = row['shares']
+                entry_p = row['entry_price']
+                total_cost = entry_p * qty * multiplier
+                
                 if row['status'] == 'CLOSED':
                     current_p = row['actual_exit_price']
-                    iv_display = "N/A"
+                    realized_pnl += (current_p - entry_p) * qty * multiplier
                 else:
-                    info = live_data.get(asset_id, {})
-                    current_p = info.get('price', row['entry_price'])
-                    iv = info.get('iv', 0)
-                    iv_display = f"{iv*100:>6.1f}%" if row['option_contract'] else "N/A"
+                    current_p = live_data.get(asset_id, {}).get('price', entry_p)
+                    total_invested += total_cost
+                    current_equity += current_p * qty * multiplier
+                    unrealized_pnl += (current_p - entry_p) * qty * multiplier
+                
+                curr_val = current_p * qty * multiplier
+                total_pnl = curr_val - total_cost
+                pnl_pct = ((current_p - entry_p) / entry_p) * 100 if entry_p != 0 else 0
+                
+                print(f"{asset_id:<22} | {asset_type:<4} | {row['status']:<7} | {row['created_at'][:10]:<10} | "
+                      f"{ (row['closed_at'][:10] if row['closed_at'] else 'Active'):<10} | {entry_p:>8.2f} | "
+                      f"{current_p:>8.2f} | {qty:>4} | {total_cost:>10.2f} | {curr_val:>10.2f} | {total_pnl:>9.2f} | {pnl_pct:>7.2f}%")
 
-                pnl = ((current_p - row['entry_price']) / row['entry_price']) * 100
-                print(f"{asset_id:<25} | {row['status']:<7} | {current_p:>8.2f} | {iv_display:<8} | {pnl:>7.2f}%")
+            # 3. Portfolio Summary Block
+            print("-" * len(header))
+            print(f"{'PORTFOLIO SUMMARY':^135}")
+            print("-" * len(header))
+            print(f"Total Invested (Open): ${total_invested:,.2f}  |  Current Equity: ${current_equity:,.2f}")
+            print(f"Unrealized P/L:        ${unrealized_pnl:,.2f}  |  Realized P/L:   ${realized_pnl:,.2f}")
+            print(f"Total Net P/L:         ${(unrealized_pnl + realized_pnl):,.2f}")
+            print("-" * len(header))
 
 if __name__ == "__main__":
     import os
