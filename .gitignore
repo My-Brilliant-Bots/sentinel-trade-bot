@@ -186,3 +186,4 @@ scanner_output/
 *.csv
 *.png
 test_trading.db
+*.db
