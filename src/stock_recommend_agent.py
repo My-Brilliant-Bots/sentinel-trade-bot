@@ -29,7 +29,8 @@ logger = get_logger(__name__)
 class StockRecommendAgent:
 
   def create_trading_team(self):
-    
+    db = TradeDatabase()
+
     research_tool = FunctionTool(
       self.deep_market_research, 
       strict=True,
@@ -87,6 +88,15 @@ class StockRecommendAgent:
         reflect_on_tool_use=True,
         system_message=senior_analyst_review_prompt
     )
+
+    portfolio_data_manager = AssistantAgent(
+          name="Portfolio_Data_Manager",
+          model_client=ModelClientRegistry.get_or_email_model_client(),
+          tools=[db.save_signal],
+          max_tool_iterations=1,
+          reflect_on_tool_use=True,
+          system_message=portfolio_data_manager_system_prompt
+      )
     
     """Create a fresh trading team instance with reset conversation history."""
     return RoundRobinGroupChat(

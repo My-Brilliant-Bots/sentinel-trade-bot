@@ -82,6 +82,7 @@ You are the Derivatives Specialist.
        - implied_volatlity: The Implied Volatitly 
        - historical_volatility: The historical volatiltiy
        - option greeks: delta, gamma,theta, vega, rho
+       - use the option contract's preimium while recommending option_entry_price, option_target_exit_price, option_actual_exit_price
     3. If no options are recommended, set:
        - option_recommendation_strategy: "NO TRADE"
        - option_recommendation_reasoning: Clear reason why no options were recommended (e.g., "No suitable options found: [reason from tool]")
@@ -96,6 +97,10 @@ You are the Derivatives Specialist.
         "option_expiration_date": "YYYY-MM-DD" or "Month DD, YYYY" or null,
         "option_type": "call" or "put" or null,
         "option_contract": "formatted string" or null
+        "option_entry_price" : 0.0 or null,
+        "option_target_exit_price" : 0.0 or null, 
+        "option_actual_exit_price" : 0.0 or null,
+        "num_of_contracts" : 0 or null,
         "implied_volatility": 0.0 or null,
         "historical_volatility": 0.0 or null,
         "delta": 0.0 or null,
@@ -207,6 +212,10 @@ Output your final recommendation as a JSON ARRAY (one object per symbol) matchin
     "option_expiration_date": "YYYY-MM-DD" or "Month DD, YYYY" or null,
     "option_type": "call" or "put" or null,
     "option_contract": "formatted string" or null
+    "option_entry_price" : 0.0 or null,
+    "option_target_exit_price" : 0.0 or null, 
+    "option_actual_exit_price" : 0.0 or null,
+    "num_of_contracts" : 0 or null,
 }
 
 CRITICAL RULES:

@@ -2,6 +2,7 @@ import json
 import sqlite3
 import yfinance as yf
 import math
+import re
 from datetime import datetime
 from scipy.stats import norm
 from typing import List, Optional, Dict, Any
@@ -61,12 +62,20 @@ class TradeDatabase:
                     option_expiration_date TEXT, 
                     option_type TEXT, 
                     option_contract TEXT, 
+                    option_entry_price REAL, 
+                    option_target_exit_price REAL, 
+                    option_actual_exit_price REAL,
+                    num_of_contracts INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     closed_at TIMESTAMP,
                     status TEXT DEFAULT 'OPEN',
                     implied_volatility REAL, 
                     historical_volatility REAL,
-                    delta REAL, gamma REAL, theta REAL, vega REAL, rho REAL
+                    delta REAL, 
+                    gamma REAL, 
+                    theta REAL, 
+                    vega REAL, 
+                    rho REAL
                 )
             """)
 
@@ -84,8 +93,17 @@ class TradeDatabase:
             str: Standardized OCC symbol (e.g., 'AAPL260117C00150000').
         """
         ticker = symbol.upper().strip().ljust(6).replace(" ", "")
-        date_obj = datetime.strptime(expiry.replace("-", ""), "%Y%m%d")
-        date_str = date_obj.strftime("%y%m%d")
+        #date_obj = datetime.strptime(expiry.replace("-", ""), "%Y%m%d")
+        #date_str = date_obj.strftime("%y%m%d")
+
+        # Extract YYYY-MM-DD
+        match = re.search(r"\d{4}-\d{2}-\d{2}", expiry)
+        if not match:
+         raise ValueError(f"No valid date found in: {expiry}")
+        date_part = match.group()
+        dt = datetime.strptime(date_part, "%Y-%m-%d")
+        date_str = dt.strftime("%y%m%d")
+
         type_char = opt_type[0].upper()
         strike_int = int(strike * 1000)
         strike_str = f"{strike_int:08d}"
@@ -239,12 +257,12 @@ class TradeDatabase:
                 multiplier = 100 if is_opt else 1
                 
                 # Pricing & Financials
-                qty = row['shares']
-                entry_p = row['entry_price']
+                qty = row['num_of_contracts'] if is_opt else row['shares']
+                entry_p = row['option_entry_price']  if is_opt else row['entry_price']
                 total_cost = entry_p * qty * multiplier
                 
                 if row['status'] == 'CLOSED':
-                    current_p = row['actual_exit_price']
+                    current_p = row['option_actual_exit_price'] if is_opt else row['actual_exit_price']
                     realized_pnl += (current_p - entry_p) * qty * multiplier
                 else:
                     current_p = live_data.get(asset_id, {}).get('price', entry_p)
@@ -273,56 +291,52 @@ if __name__ == "__main__":
     import os
     
     # 1. Reset the database for a clean test run
-    #if os.path.exists("trading_bot.db"):
-    #    os.remove("trading_bot.db")
+    if os.path.exists("trading_bot.db"):
+        os.remove("trading_bot.db")
         
     db = TradeDatabase("trading_bot.db")
 
     # 2. Sample 1: A Stock Trade (NVDA)
     # Includes all mandatory fields to satisfy the TradeSignal BaseModel
-    """
-    nvda_signal = TradeSignal(
-        symbol="NVDA",
+    
+
+    # 3. Sample 2: An Option Trade (AAPL)
+    # Uses a real-world strike and future expiration date
+    
+    aapl_signal = TradeSignal(
+        symbol="AAPL",
         entry_price=125.00,
         stop_loss=115.00,
         take_profit=160.00,
         confidence_score=0.88,
         shares=10,
-        market_research="Strong data center growth projected in next quarter.",
         stock_recommendation_strategy="BUY",
         stock_recommendation_reasoning="Bouncing off 50-day moving average.",
-        option_recommendation_strategy="NO TRADE",
-        option_recommendation_reasoning="N/A"
-    )
-    """
-
-    # 3. Sample 2: An Option Trade (AAPL)
-    # Uses a real-world strike and future expiration date
-    """
-    aapl_signal = TradeSignal(
-        symbol="AAPL",
-        entry_price=8.50,
-        stop_loss=4.00,
-        take_profit=20.00,
-        confidence_score=0.75,
-        shares=3,
         market_research="Anticipating volatility expansion before product event.",
-        stock_recommendation_strategy="NO TRADE",
-        stock_recommendation_reasoning="N/A",
         option_recommendation_strategy="Buy Long Call",
         option_recommendation_reasoning="High Delta/Gamma setup",
         option_strike=230.0,
         option_expiration_date="2026-06-19",  # Standard monthly expiry
         option_type="call",
-        implied_volatility=0.22,
-        delta=0.60
+        option_entry_price=12.0, 
+        option_target_exit_price=24.0, 
+        option_actual_exit_price=25.0,
+        num_of_contracts=1,
+        implied_volatility=12.0, 
+        historical_volatility=12.0,
+        delta =12.0, 
+        gamma =12.0, 
+        theta =12.0, 
+        vega =12.0, 
+        rho =12.0,
+        option_contract="xyz"
     )
-    """
+    
 
     # 4. Save signals (The save_signal method will auto-generate the OCC symbol for AAPL)
     print("Saving signals to database...")
     #db.save_signal(nvda_signal)
-    #db.save_signal(aapl_signal)
+    db.save_signal(aapl_signal)
 
     # 5. Show Live Status (fetches real-time price and IV from yfinance)
     #print("\n--- Initial Portfolio Status ---")

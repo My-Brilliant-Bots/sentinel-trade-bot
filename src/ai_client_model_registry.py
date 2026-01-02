@@ -31,6 +31,10 @@ class TradeSignal(BaseModel):
     option_expiration_date: str # Expiration date in format "YYYY-MM-DD" or "Month DD, YYYY" (e.g., "2025-01-17" or "January 17, 2025")
     option_type: str  # "call" or "put"
     option_contract: str  # Formatted contract string (e.g., "NKE 60 CALL 2025-01-17" or "NKE $60 Put Jan 17, 2025")
+    option_entry_price : float # Market price of the option
+    option_target_exit_price : float 
+    option_actual_exit_price : float
+    num_of_contracts : int # Number of option contracts to buy
 
     #Volatility Fields
     implied_volatility: float    # IV at time of entry (e.g., 0.35 for 35%)
