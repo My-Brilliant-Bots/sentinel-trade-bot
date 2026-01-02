@@ -14,14 +14,17 @@ from data_fetcher import StockDataFetcher
 from logging_config import get_logger
 from prompts import (
    options_strategist_system_prompt,
+   portfolio_data_manager_system_prompt,
    senior_analyst_review_prompt,
    technical_analyst_prompt,
    market_researcher_prompt
 )
 from ragQuery import augment_query_with_context
 from search_tool import SearchTool
+from trade_database import TradeDatabase
 
-logging = get_logger(__name__)
+logger = get_logger(__name__)
+
 
 class StockRecommendAgent:
 
@@ -56,7 +59,7 @@ class StockRecommendAgent:
 
     analyst_2 = AssistantAgent(
       name="Technical_Analyst_2",
-      model_client=groq_model_client,
+      model_client=open_router_finance_model_client,
       reflect_on_tool_use=True,
       system_message=technical_analyst_prompt
     )
@@ -72,7 +75,7 @@ class StockRecommendAgent:
 
     options_agent_2 = AssistantAgent(
         name="Options_Strategist_2",
-        model_client=groq_model_client,
+        model_client=open_router_finance_model_client,
         reflect_on_tool_use=True,
         system_message=options_strategist_system_prompt
     )
@@ -81,6 +84,7 @@ class StockRecommendAgent:
     senior_analyst = AssistantAgent(
         name="Senior_Analyst",
         model_client=open_router_finance_model_client,
+        reflect_on_tool_use=True,
         system_message=senior_analyst_review_prompt
     )
     
@@ -128,25 +132,62 @@ class StockRecommendAgent:
     """
 
     if (skip_execution):
-      logging.debug("Skipping LLM calls. Returning canned response")
+      logger.debug("Skipping LLM calls. Returning canned response")
       return response
 
-    logging.debug("Trading Team Start")
+    logger.debug("Trading Team Start")
     
     try:
       result = await trading_team.run(task=augemented_query)
-      logging.debug("Trading Team End")
+      logger.debug("Trading Team End")
       
       # Get the last message content (from the Senior_Analyst) - should be a JSON array
       response = result.messages[-1].content
-      logging.debug(f"\nFinal message from Senior_Analyst:\n{response}\n")
-    
+
+      logger.debug(f"\nFinal message from Senior_Analyst:\n{response}\n")
+
+      db = TradeDatabase()
+
+      save_tool = FunctionTool(
+        db.save_signal, 
+        name="save_signal",
+        strict=True,
+        description="Persists the final reconciled trade signal into the database.")
+      
+      close_tool = FunctionTool(
+        db.close_trade_by_attributes, 
+        strict=True,
+        name="close_trade_by_attributes",
+        description="Closes an existing open trade in the database. Use this when the analysts recommend EXITING or CLOSING a position.")
+      
+      # Portfolio_Data_Manager is reponsible for updating the portfolio data in the database.
+      portfolio_data_manager = AssistantAgent(
+          name="Portfolio_Data_Manager",
+          model_client=ModelClientRegistry.get_or_email_model_client(),
+          tools=[db.save_signal],
+          max_tool_iterations=1,
+          reflect_on_tool_use=True,
+          system_message=portfolio_data_manager_system_prompt
+      )
+
+      data_prompt= f"""Please update the portfolio data in the database with the new trade details: 
+        Use the following trade details: {response} . 
+        """
+      logger.debug(f"Data prompt: {data_prompt}")
+
+      message = TextMessage(
+        content= data_prompt,
+        source="user")
+      
+      response_from_portfolio_data_manager: TextMessage = await portfolio_data_manager.on_messages(messages=[message], cancellation_token=CancellationToken())
+      logger.debug(f"\nResponse from Portfolio_Data_Manager:\n{response_from_portfolio_data_manager.chat_message.content}\n")
+
       return response
     except RateLimitError as rateLimitError :
-      logging.error(f"An error occurred: Rate Limit Exceeded: {rateLimitError}")
+      logger.error(f"An error occurred: Rate Limit Exceeded: {rateLimitError}")
       return response
     except Exception as e:
-      logging.error(f"An unexpected error occurred: {e}")
+      logger.error(f"An unexpected error occurred: {e}")
       return response
   
   def deep_market_research(self,symbol: str) -> str:
@@ -176,7 +217,7 @@ class StockRecommendAgent:
         except Exception as e:
             results.append(f"### Query: {q}\nError fetching data: {str(e)}")
 
-    logging.debug(f"Market Research contents is {results}")
+    logger.debug(f"Market Research contents is {results}")
 
     # Return as formatted string, NOT as Pydantic model
     report = f"""
@@ -220,7 +261,7 @@ async def test_tool():
       )
 
       response: TextMessage = await market_researcher.on_messages(messages=[message], cancellation_token=CancellationToken())
-      logging.debug(response.chat_message.content)
+      logger.debug(response.chat_message.content)
 
 if __name__ == "__main__":
     asyncio.run(test_tool())

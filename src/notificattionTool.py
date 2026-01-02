@@ -1,7 +1,9 @@
+import datetime
 from email.message import EmailMessage
 import logging
 import os
 import smtplib
+from zoneinfo import ZoneInfo
 
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.messages import TextMessage
@@ -13,6 +15,10 @@ from logging_config import get_logger
 from prompts import report_agent_system_prompt
 
 logging = get_logger(__name__)
+
+def get_current_date() -> str:
+    central = ZoneInfo("America/Chicago")  # Handles CST/CDT automatically
+    return datetime.now(central).strftime("%Y-%m-%d")
 
 def send_email(subject:str, report:str):
   logging.debug("\n--- Calling send_email ---")
@@ -65,6 +71,7 @@ async def send_report(all_signals_for_report):
         model_client=ModelClientRegistry.get_or_email_model_client(),
         tools=[send_email, send_sms_text],
         reflect_on_tool_use=True,
+        max_tool_iterations=3,
         system_message=report_agent_system_prompt
     )
 

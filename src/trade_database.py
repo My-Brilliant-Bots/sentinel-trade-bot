@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import yfinance as yf
 import math
@@ -5,6 +6,10 @@ from datetime import datetime
 from scipy.stats import norm
 from typing import List, Optional, Dict, Any
 from ai_client_model_registry import TradeSignal
+
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class TradeDatabase:
     """
@@ -86,7 +91,7 @@ class TradeDatabase:
         strike_str = f"{strike_int:08d}"
         return f"{ticker}{date_str}{type_char}{strike_str}"
 
-    def save_signal(self, signal: TradeSignal):
+    def save_signal(self, signal_as_string: str):
         """
         Persists a new trade signal into the database.
 
@@ -106,28 +111,42 @@ class TradeDatabase:
         Example:
             >>> db.save_signal(my_long_call_signal)
         """
-        data = signal.model_dump()
-        
-        # Determine if this is an option trade to generate OCC symbol
-        if data.get('option_recommendation_strategy') != "NO TRADE" and data.get('option_strike'):
-            data['option_contract'] = self._generate_occ_symbol(
-                data['symbol'], 
-                data['option_expiration_date'], 
-                data['option_type'], 
-                data['option_strike']
-            )
+        try:
+            logger.debug("Called save signal method")
+            data = json.loads(signal_as_string)
+            logger.debug(f"Converted to json {data}")
+            
+            # Determine if this is an option trade to generate OCC symbol
+            if data.get('option_recommendation_strategy') != "NO TRADE" and data.get('option_strike'):
+                logger.debug("set option contract")
+                data['option_contract'] = self._generate_occ_symbol(
+                    data['symbol'], 
+                    data['option_expiration_date'], 
+                    data['option_type'], 
+                    data['option_strike']
+                )
+            
+            clean_data = {k: v for k, v in data.items() if v is not None}
+            columns = ', '.join(clean_data.keys())
+            placeholders = ', '.join([':' + k for k in clean_data.keys()])
+            
+            logger.debug("Start insert ")
+            sql = f"INSERT INTO trades ({columns}) VALUES ({placeholders})"
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(sql, clean_data)
 
-        clean_data = {k: v for k, v in data.items() if v is not None}
-        columns = ', '.join(clean_data.keys())
-        placeholders = ', '.join([':' + k for k in clean_data.keys()])
-        
-        sql = f"INSERT INTO trades ({columns}) VALUES ({placeholders})"
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(sql, clean_data)
+            logger.debug("Complete insert ")
+            
+            logger.debug("Completed save signal method")
+            logger.debug("Portfolio summary report")
+            logger.debug(self.get_live_portfolio_status())
+        except Exception as ex:
+            logger.error(f"Error saving to database {ex}")
+
 
     def close_trade_by_attributes(self, symbol: str, actual_exit_price: float, 
-                                 target_exit_price: float, option_expiry: str = None, 
-                                 option_type: str = None, option_strike: float = None):
+                                 target_exit_price: float, option_expiry: str , 
+                                 option_type: str, option_strike: float):
         """
         Updates an open trade to 'CLOSED' status based on stock or option attributes.
 
@@ -254,13 +273,14 @@ if __name__ == "__main__":
     import os
     
     # 1. Reset the database for a clean test run
-    if os.path.exists("trading_bot.db"):
-        os.remove("trading_bot.db")
+    #if os.path.exists("trading_bot.db"):
+    #    os.remove("trading_bot.db")
         
     db = TradeDatabase("trading_bot.db")
 
     # 2. Sample 1: A Stock Trade (NVDA)
     # Includes all mandatory fields to satisfy the TradeSignal BaseModel
+    """
     nvda_signal = TradeSignal(
         symbol="NVDA",
         entry_price=125.00,
@@ -274,9 +294,11 @@ if __name__ == "__main__":
         option_recommendation_strategy="NO TRADE",
         option_recommendation_reasoning="N/A"
     )
+    """
 
     # 3. Sample 2: An Option Trade (AAPL)
     # Uses a real-world strike and future expiration date
+    """
     aapl_signal = TradeSignal(
         symbol="AAPL",
         entry_price=8.50,
@@ -295,24 +317,25 @@ if __name__ == "__main__":
         implied_volatility=0.22,
         delta=0.60
     )
+    """
 
     # 4. Save signals (The save_signal method will auto-generate the OCC symbol for AAPL)
     print("Saving signals to database...")
-    db.save_signal(nvda_signal)
-    db.save_signal(aapl_signal)
+    #db.save_signal(nvda_signal)
+    #db.save_signal(aapl_signal)
 
     # 5. Show Live Status (fetches real-time price and IV from yfinance)
-    print("\n--- Initial Portfolio Status ---")
-    db.get_live_portfolio_status()
+    #print("\n--- Initial Portfolio Status ---")
+    #db.get_live_portfolio_status()
 
     # 6. Test Closing Logic
     # We close the NVDA stock trade at a profit
     print("\nClosing NVDA position...")
-    db.close_trade_by_attributes(
-        symbol="NVDA",
-        actual_exit_price=135.50,
-        target_exit_price=135.00
-    )
+    #db.close_trade_by_attributes(
+    #    symbol="NVDA",
+    #    actual_exit_price=135.50,
+    #    target_exit_price=135.00
+    #)
 
     # 7. Final Report
     print("\n--- Final Portfolio Status (1 Closed, 1 Open) ---")

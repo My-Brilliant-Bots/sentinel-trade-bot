@@ -27,22 +27,21 @@ class TradeSignal(BaseModel):
     option_recommendation_strategy: str  # e.g., "Buy Long Call", "Buy Long Put", "Covered Call", "NO TRADE"
     option_recommendation_reasoning: str  # Explanation for option recommendation
     
-    # Option contract details (required if option_recommendation_strategy is not "NO TRADE")
-    option_strike: Optional[float] = None  # Strike price of the option (e.g., 60.0)
-    option_expiration_date: Optional[str] = None  # Expiration date in format "YYYY-MM-DD" or "Month DD, YYYY" (e.g., "2025-01-17" or "January 17, 2025")
-    option_type: Optional[str] = None  # "call" or "put"
-    option_contract: Optional[str] = None  # Formatted contract string (e.g., "NKE 60 CALL 2025-01-17" or "NKE $60 Put Jan 17, 2025")
+    option_strike: float  # Strike price of the option (e.g., 60.0)
+    option_expiration_date: str # Expiration date in format "YYYY-MM-DD" or "Month DD, YYYY" (e.g., "2025-01-17" or "January 17, 2025")
+    option_type: str  # "call" or "put"
+    option_contract: str  # Formatted contract string (e.g., "NKE 60 CALL 2025-01-17" or "NKE $60 Put Jan 17, 2025")
 
     #Volatility Fields
-    implied_volatility: Optional[float] = None     # IV at time of entry (e.g., 0.35 for 35%)
-    historical_volatility: Optional[float] = None  # HV (e.g., 20-day or 30-day realized)
+    implied_volatility: float    # IV at time of entry (e.g., 0.35 for 35%)
+    historical_volatility: float  # HV (e.g., 20-day or 30-day realized)
     
     # The Greeks
-    delta: Optional[float] = None  # Sensitivity to underlying price
-    gamma: Optional[float] = None  # Sensitivity of Delta to underlying price
-    theta: Optional[float] = None  # Time decay (daily)
-    vega: Optional[float] = None   # Sensitivity to IV changes
-    rho: Optional[float] = None    # Sensitivity to interest rates
+    delta: float  # Sensitivity to underlying price
+    gamma: float # Sensitivity of Delta to underlying price
+    theta: float # Time decay (daily)
+    vega: float   # Sensitivity to IV changes
+    rho: float   # Sensitivity to interest rates
 
 class ModelClientRegistry:
     # Singleton storage
