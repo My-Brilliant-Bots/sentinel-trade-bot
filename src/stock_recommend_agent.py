@@ -100,8 +100,14 @@ class StockRecommendAgent:
     
     """Create a fresh trading team instance with reset conversation history."""
     return RoundRobinGroupChat(
-        participants=[market_researcher,analyst_1, options_agent_1, analyst_2, options_agent_2,senior_analyst],
-        max_turns=6)
+        participants=[market_researcher,
+          analyst_1, 
+          options_agent_1, 
+          analyst_2, 
+          options_agent_2,
+          senior_analyst,
+          portfolio_data_manager],
+        max_turns=7)
 
   async def recommend_trades( self,symbol_to_analyze, skip_execution:bool=True ):
     # Create a fresh team instance to reset conversation history
@@ -153,44 +159,7 @@ class StockRecommendAgent:
       
       # Get the last message content (from the Senior_Analyst) - should be a JSON array
       response = result.messages[-1].content
-
       logger.debug(f"\nFinal message from Senior_Analyst:\n{response}\n")
-
-      db = TradeDatabase()
-
-      save_tool = FunctionTool(
-        db.save_signal, 
-        name="save_signal",
-        strict=True,
-        description="Persists the final reconciled trade signal into the database.")
-      
-      close_tool = FunctionTool(
-        db.close_trade_by_attributes, 
-        strict=True,
-        name="close_trade_by_attributes",
-        description="Closes an existing open trade in the database. Use this when the analysts recommend EXITING or CLOSING a position.")
-      
-      # Portfolio_Data_Manager is reponsible for updating the portfolio data in the database.
-      portfolio_data_manager = AssistantAgent(
-          name="Portfolio_Data_Manager",
-          model_client=ModelClientRegistry.get_or_email_model_client(),
-          tools=[db.save_signal],
-          max_tool_iterations=1,
-          reflect_on_tool_use=True,
-          system_message=portfolio_data_manager_system_prompt
-      )
-
-      data_prompt= f"""Please update the portfolio data in the database with the new trade details: 
-        Use the following trade details: {response} . 
-        """
-      logger.debug(f"Data prompt: {data_prompt}")
-
-      message = TextMessage(
-        content= data_prompt,
-        source="user")
-      
-      response_from_portfolio_data_manager: TextMessage = await portfolio_data_manager.on_messages(messages=[message], cancellation_token=CancellationToken())
-      logger.debug(f"\nResponse from Portfolio_Data_Manager:\n{response_from_portfolio_data_manager.chat_message.content}\n")
 
       return response
     except RateLimitError as rateLimitError :
