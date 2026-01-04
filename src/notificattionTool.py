@@ -13,6 +13,7 @@ import requests
 from ai_client_model_registry import ModelClientRegistry
 from logging_config import get_logger
 from prompts import report_agent_system_prompt
+from trade_database import TradeDatabase
 
 logging = get_logger(__name__)
 
@@ -76,12 +77,23 @@ async def send_report(all_signals_for_report):
     )
 
     logging.debug("Sending email and text notification")
+    trade_datebase = TradeDatabase()
+    portfolio = trade_datebase.get_live_portfolio_status()
+    message_content=f"""
+        Please send an email with :
+        ## 1. Stock and Option Recommendations:
+        Include stock and option recommendations : {all_signals_for_report}
+
+        ## 2. Live Portfolio
+        Here is the current portfolio: {portfolio}
+
+        Finally, send an sms alert once the email has been sent
+        """
     message = TextMessage(
-        content=f"""Please send an email with these stock and option recommendations : {all_signals_for_report}
-        Send an sms alert once the email has been sent
-        """, 
+        content=message_content, 
         source="user"
     )
+    logging.debug(message_content)
 
     await report_agent.on_messages(messages=[message], cancellation_token=CancellationToken())
 

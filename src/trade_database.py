@@ -272,20 +272,21 @@ class TradeDatabase:
             conn.execute(sql, (actual_exit_price, target_exit_price, occ_symbol))
             logger.debug(f"Closed option trade {occ_symbol}")
 
-    def get_live_portfolio_status(self):
+    def get_live_portfolio_status(self) -> str:
         """
-        Generates a comprehensive financial status report with Portfolio Summary.
-        
-        Combines stock and option trades into a unified view with real-time pricing.
+        Generates a comprehensive financial status report with Portfolio Summary
+        and RETURNS it as a formatted string instead of printing to console.
         """
+        output_lines = []
+
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            
+
             # Fetch live market data for open trades
             live_data = {}
-            
-            # Get open stock trades
+
+            # Open stock trades
             cursor.execute("SELECT * FROM stock_trades WHERE status = 'OPEN'")
             open_stocks = cursor.fetchall()
             for trade in open_stocks:
@@ -295,8 +296,8 @@ class TradeDatabase:
                     live_data[symbol] = {'price': ticker_obj.fast_info['last_price']}
                 except Exception:
                     continue
-            
-            # Get open option trades
+
+            # Open option trades
             cursor.execute("SELECT * FROM option_trades WHERE status = 'OPEN'")
             open_options = cursor.fetchall()
             for trade in open_options:
@@ -307,11 +308,13 @@ class TradeDatabase:
                     df = chain.calls if trade['option_type'].lower() == 'call' else chain.puts
                     contract_data = df[df['contractSymbol'] == occ_symbol]
                     if not contract_data.empty:
-                        live_data[occ_symbol] = {'price': contract_data['lastPrice'].values[0]}
+                        live_data[occ_symbol] = {
+                            'price': contract_data['lastPrice'].values[0]
+                        }
                 except Exception:
                     continue
 
-            # Fetch all trades and combine them with explicit column mapping
+            # Unified trade query
             cursor.execute("""
                 SELECT 
                     'STOCK' as trade_type,
@@ -329,9 +332,9 @@ class TradeDatabase:
                     NULL as num_of_contracts,
                     NULL as option_type
                 FROM stock_trades
-                
+
                 UNION ALL
-                
+
                 SELECT 
                     'OPTION' as trade_type,
                     id,
@@ -348,26 +351,32 @@ class TradeDatabase:
                     num_of_contracts,
                     option_type
                 FROM option_trades
-                
+
                 ORDER BY status DESC, created_at DESC
             """)
+
             rows = cursor.fetchall()
-            
-            header = (f"{'Asset Identifier':<22} | {'Type':<6} | {'Status':<7} | {'Opened':<10} | {'Closed':<10} | "
-                      f"{'Entry':<8} | {'Current':<8} | {'Qty':<4} | {'Total Cost':<10} | {'Curr Value':<10} | {'Total P/L':<9} | {'PnL %'}")
-            print("\n" + header)
-            print("-" * len(header))
-            
-            # Summary tracking
-            total_invested = 0
-            current_equity = 0
-            realized_pnl = 0
-            unrealized_pnl = 0
+
+            header = (
+                f"{'Asset Identifier':<22} | {'Type':<6} | {'Status':<7} | "
+                f"{'Opened':<10} | {'Closed':<10} | {'Entry':<8} | {'Current':<8} | "
+                f"{'Qty':<4} | {'Total Cost':<10} | {'Curr Value':<10} | "
+                f"{'Total P/L':<9} | {'PnL %'}"
+            )
+
+            separator = "-" * len(header)
+
+            output_lines.append(header)
+            output_lines.append(separator)
+
+            total_invested = 0.0
+            current_equity = 0.0
+            realized_pnl = 0.0
+            unrealized_pnl = 0.0
 
             for row in rows:
-                trade_type = row['trade_type']
-                is_stock = trade_type == 'STOCK'
-                
+                is_stock = row['trade_type'] == 'STOCK'
+
                 if is_stock:
                     asset_id = row['symbol']
                     asset_type = "STOCK"
@@ -380,9 +389,9 @@ class TradeDatabase:
                     multiplier = 100
                     qty = row['num_of_contracts']
                     entry_p = row['option_entry_price']
-                
+
                 total_cost = entry_p * qty * multiplier
-                
+
                 if row['status'] == 'CLOSED':
                     current_p = row['actual_exit_price']
                     realized_pnl += (current_p - entry_p) * qty * multiplier
@@ -391,23 +400,40 @@ class TradeDatabase:
                     total_invested += total_cost
                     current_equity += current_p * qty * multiplier
                     unrealized_pnl += (current_p - entry_p) * qty * multiplier
-                
+
                 curr_val = current_p * qty * multiplier
                 total_pnl = curr_val - total_cost
-                pnl_pct = ((current_p - entry_p) / entry_p) * 100 if entry_p != 0 else 0
-                
-                print(f"{asset_id:<22} | {asset_type:<6} | {row['status']:<7} | {row['created_at'][:10]:<10} | "
-                      f"{(row['closed_at'][:10] if row['closed_at'] else 'Active'):<10} | {entry_p:>8.2f} | "
-                      f"{current_p:>8.2f} | {qty:>4} | {total_cost:>10.2f} | {curr_val:>10.2f} | {total_pnl:>9.2f} | {pnl_pct:>7.2f}%")
+                pnl_pct = ((current_p - entry_p) / entry_p) * 100 if entry_p else 0
 
-            # Portfolio Summary
-            print("-" * len(header))
-            print(f"{'PORTFOLIO SUMMARY':^135}")
-            print("-" * len(header))
-            print(f"Total Invested (Open): ${total_invested:,.2f}  |  Current Equity: ${current_equity:,.2f}")
-            print(f"Unrealized P/L:        ${unrealized_pnl:,.2f}  |  Realized P/L:   ${realized_pnl:,.2f}")
-            print(f"Total Net P/L:         ${(unrealized_pnl + realized_pnl):,.2f}")
-            print("-" * len(header))
+                output_lines.append(
+                    f"{asset_id:<22} | {asset_type:<6} | {row['status']:<7} | "
+                    f"{row['created_at'][:10]:<10} | "
+                    f"{(row['closed_at'][:10] if row['closed_at'] else 'Active'):<10} | "
+                    f"{entry_p:>8.2f} | {current_p:>8.2f} | {qty:>4} | "
+                    f"{total_cost:>10.2f} | {curr_val:>10.2f} | "
+                    f"{total_pnl:>9.2f} | {pnl_pct:>7.2f}%"
+                )
+
+            # Portfolio summary
+            output_lines.append(separator)
+            output_lines.append(f"{'PORTFOLIO SUMMARY':^{len(header)}}")
+            output_lines.append(separator)
+            output_lines.append(
+                f"Total Invested (Open): ${total_invested:,.2f}  |  "
+                f"Current Equity: ${current_equity:,.2f}"
+            )
+            output_lines.append(
+                f"Unrealized P/L:        ${unrealized_pnl:,.2f}  |  "
+                f"Realized P/L:   ${realized_pnl:,.2f}"
+            )
+            output_lines.append(
+                f"Total Net P/L:         ${(unrealized_pnl + realized_pnl):,.2f}"
+            )
+            output_lines.append(separator)
+
+        portfolio = "\n".join(output_lines)
+        logger.debug(portfolio)
+        return portfolio
 
 
 if __name__ == "__main__":
