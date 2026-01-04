@@ -1,23 +1,21 @@
 import json
 import sqlite3
 import yfinance as yf
-import math
 import re
 from datetime import datetime
-from scipy.stats import norm
-from typing import List, Optional, Dict, Any
-from ai_client_model_registry import TradeSignal
+from typing import Optional
 
 from logging_config import get_logger
+from ai_client_model_registry import StockSignal, TradeSignal, OptionSignal
 
 logger = get_logger(__name__)
 
 class TradeDatabase:
     """
-    Manages a SQLite database for tracking stock and option trades.
+    Manages a SQLite database for tracking stock and option trades separately.
 
-    This class handles schema initialization, signal persistence with 
-    deterministic OCC symbol generation, and real-time portfolio tracking 
+    This class handles schema initialization with separate tables for stock
+    and option trades, signal persistence, and real-time portfolio tracking
     using yfinance for market data and Greeks.
 
     Attributes:
@@ -38,34 +36,51 @@ class TradeDatabase:
         """
         Initializes the database schema if it does not already exist.
         
-        Creates the 'trades' table with columns for trade metadata, 
-        option-specific details (OCC symbols), and risk metrics (Greeks).
+        Creates separate 'stock_trades' and 'option_trades' tables.
         """
         with sqlite3.connect(self.db_path) as conn:
+            # Stock trades table
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS trades (
+                CREATE TABLE IF NOT EXISTS stock_trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_id TEXT,
                     symbol TEXT NOT NULL, 
-                    entry_price REAL, 
-                    target_exit_price REAL, 
+                    entry_price REAL NOT NULL, 
+                    target_exit_price REAL,
                     actual_exit_price REAL,
-                    stop_loss REAL, 
-                    take_profit REAL, 
-                    confidence_score REAL, 
-                    shares INTEGER, 
+                    stop_loss REAL NOT NULL, 
+                    take_profit REAL NOT NULL, 
+                    confidence_score REAL NOT NULL, 
+                    shares INTEGER NOT NULL, 
                     market_research TEXT,
-                    stock_recommendation_strategy TEXT, 
+                    stock_recommendation_strategy TEXT NOT NULL, 
                     stock_recommendation_reasoning TEXT,
-                    option_recommendation_strategy TEXT, 
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    closed_at TIMESTAMP,
+                    status TEXT DEFAULT 'OPEN'
+                )
+            """)
+            
+            # Option trades table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS option_trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    signal_id TEXT,
+                    symbol TEXT NOT NULL,
+                    target_exit_price REAL,
+                    actual_exit_price REAL,
+                    stop_loss REAL NOT NULL, 
+                    take_profit REAL NOT NULL, 
+                    confidence_score REAL NOT NULL, 
+                    market_research TEXT,
+                    option_recommendation_strategy TEXT NOT NULL, 
                     option_recommendation_reasoning TEXT,
-                    option_strike REAL, 
-                    option_expiration_date TEXT, 
-                    option_type TEXT, 
-                    option_contract TEXT, 
-                    option_entry_price REAL, 
-                    option_target_exit_price REAL, 
-                    option_actual_exit_price REAL,
-                    num_of_contracts INTEGER,
+                    option_strike REAL NOT NULL, 
+                    option_expiration_date TEXT NOT NULL, 
+                    option_type TEXT NOT NULL, 
+                    option_contract TEXT NOT NULL, 
+                    option_entry_price REAL NOT NULL, 
+                    num_of_contracts INTEGER NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     closed_at TIMESTAMP,
                     status TEXT DEFAULT 'OPEN',
@@ -93,13 +108,11 @@ class TradeDatabase:
             str: Standardized OCC symbol (e.g., 'AAPL260117C00150000').
         """
         ticker = symbol.upper().strip().ljust(6).replace(" ", "")
-        #date_obj = datetime.strptime(expiry.replace("-", ""), "%Y%m%d")
-        #date_str = date_obj.strftime("%y%m%d")
-
+        
         # Extract YYYY-MM-DD
         match = re.search(r"\d{4}-\d{2}-\d{2}", expiry)
         if not match:
-         raise ValueError(f"No valid date found in: {expiry}")
+            raise ValueError(f"No valid date found in: {expiry}")
         date_part = match.group()
         dt = datetime.strptime(date_part, "%Y-%m-%d")
         date_str = dt.strftime("%y%m%d")
@@ -111,158 +124,267 @@ class TradeDatabase:
 
     def save_signal(self, signal_as_string: str):
         """
-        Persists a new trade signal into the database.
-
-        If the signal is an option trade, it automatically generates the 
-        standardized OCC 'option_contract' name.
+        Persists a new trade signal into the database as separate stock and option rows.
 
         Args:
-            signal (TradeSignal): A Pydantic model instance containing trade details.
+            signal_as_string (str): A JSON string representation of a TradeSignal object.
 
         Returns:
             None
 
         Raises:
             sqlite3.Error: If the database insertion fails.
-            ValueError: If the signal data is malformed.
+            json.JSONDecodeError: If the JSON string is malformed.
+            ValidationError: If the data doesn't match TradeSignal schema.
             
         Example:
-            >>> db.save_signal(my_long_call_signal)
+            >>> db.save_signal('{"stock_signal": {...}, "option_signal": {...}}')
         """
         try:
-            logger.debug("Called save signal method")
-            data = json.loads(signal_as_string)
-            logger.debug(f"Converted to json {data}")
+            logger.debug("Called save_signal method")
             
-            # Determine if this is an option trade to generate OCC symbol
-            if data.get('option_recommendation_strategy') != "NO TRADE" and data.get('option_strike'):
-                logger.debug("set option contract")
-                data['option_contract'] = self._generate_occ_symbol(
-                    data['symbol'], 
-                    data['option_expiration_date'], 
-                    data['option_type'], 
-                    data['option_strike']
-                )
+            # Parse JSON string to dictionary
+            signal_dict = json.loads(signal_as_string)
+            logger.debug(f"Converted to json: {signal_dict}")
             
-            clean_data = {k: v for k, v in data.items() if v is not None}
-            columns = ', '.join(clean_data.keys())
-            placeholders = ', '.join([':' + k for k in clean_data.keys()])
+            # Convert dictionary to TradeSignal object
+            trade_signal = TradeSignal(**signal_dict)
+            logger.debug("Successfully validated TradeSignal")
             
-            logger.debug("Start insert ")
-            sql = f"INSERT INTO trades ({columns}) VALUES ({placeholders})"
+            # Generate a unique signal_id to link stock and option trades
+            signal_id = f"{trade_signal.stock_signal.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
             with sqlite3.connect(self.db_path) as conn:
-                conn.execute(sql, clean_data)
-
-            logger.debug("Complete insert ")
+                # Save stock signal if it's a valid trade
+                if trade_signal.stock_signal.stock_recommendation_strategy != "NO TRADE":
+                    stock_data = {
+                        'signal_id': signal_id,
+                        'symbol': trade_signal.stock_signal.symbol,
+                        'entry_price': trade_signal.stock_signal.entry_price,
+                        'stop_loss': trade_signal.stock_signal.stop_loss,
+                        'take_profit': trade_signal.stock_signal.take_profit,
+                        'confidence_score': trade_signal.stock_signal.confidence_score,
+                        'shares': trade_signal.stock_signal.shares,
+                        'market_research': trade_signal.stock_signal.market_research,
+                        'stock_recommendation_strategy': trade_signal.stock_signal.stock_recommendation_strategy,
+                        'stock_recommendation_reasoning': trade_signal.stock_signal.stock_recommendation_reasoning
+                    }
+                    
+                    columns = ', '.join(stock_data.keys())
+                    placeholders = ', '.join([':' + k for k in stock_data.keys()])
+                    sql = f"INSERT INTO stock_trades ({columns}) VALUES ({placeholders})"
+                    conn.execute(sql, stock_data)
+                    logger.debug(f"Saved stock trade for {signal_id}")
+                
+                # Save option signal if it's a valid trade
+                if trade_signal.option_signal.option_recommendation_strategy != "NO TRADE":
+                    # Generate OCC symbol
+                    occ_symbol = self._generate_occ_symbol(
+                        trade_signal.stock_signal.symbol,
+                        trade_signal.option_signal.option_expiration_date,
+                        trade_signal.option_signal.option_type,
+                        trade_signal.option_signal.option_strike
+                    )
+                    
+                    option_data = {
+                        'signal_id': signal_id,
+                        'symbol': trade_signal.stock_signal.symbol,
+                        'stop_loss': trade_signal.option_signal.stop_loss,
+                        'take_profit': trade_signal.option_signal.take_profit,
+                        'confidence_score': trade_signal.option_signal.confidence_score,
+                        'market_research': trade_signal.option_signal.market_research,
+                        'option_recommendation_strategy': trade_signal.option_signal.option_recommendation_strategy,
+                        'option_recommendation_reasoning': trade_signal.option_signal.option_recommendation_reasoning,
+                        'option_strike': trade_signal.option_signal.option_strike,
+                        'option_expiration_date': trade_signal.option_signal.option_expiration_date,
+                        'option_type': trade_signal.option_signal.option_type,
+                        'option_contract': occ_symbol,
+                        'option_entry_price': trade_signal.option_signal.option_entry_price,
+                        'num_of_contracts': trade_signal.option_signal.num_of_contracts,
+                        'implied_volatility': trade_signal.option_signal.implied_volatility,
+                        'historical_volatility': trade_signal.option_signal.historical_volatility,
+                        'delta': trade_signal.option_signal.delta,
+                        'gamma': trade_signal.option_signal.gamma,
+                        'theta': trade_signal.option_signal.theta,
+                        'vega': trade_signal.option_signal.vega,
+                        'rho': trade_signal.option_signal.rho
+                    }
+                    
+                    columns = ', '.join(option_data.keys())
+                    placeholders = ', '.join([':' + k for k in option_data.keys()])
+                    sql = f"INSERT INTO option_trades ({columns}) VALUES ({placeholders})"
+                    conn.execute(sql, option_data)
+                    logger.debug(f"Saved option trade for {signal_id}")
             
-            logger.debug("Completed save signal method")
+            logger.debug("Completed save_signal method")
             logger.debug("Portfolio summary report")
             logger.debug(self.get_live_portfolio_status())
+            
+        except json.JSONDecodeError as ex:
+            logger.error(f"Invalid JSON string: {ex}")
+            raise
         except Exception as ex:
-            logger.error(f"Error saving to database {ex}")
+            logger.error(f"Error saving to database: {ex}")
+            raise
 
-
-    def close_trade_by_attributes(self, symbol: str, actual_exit_price: float, 
-                                 target_exit_price: float, option_expiry: str , 
-                                 option_type: str, option_strike: float):
+    def close_stock_trade(self, symbol: str, actual_exit_price: float, target_exit_price: Optional[float] = None):
         """
-        Updates an open trade to 'CLOSED' status based on stock or option attributes.
-
-        If option attributes (expiry, type, strike) are provided, it will 
-        specifically target the option contract. Otherwise, it targets stock trades.
+        Closes an open stock trade.
 
         Args:
             symbol (str): The stock ticker.
             actual_exit_price (float): The price at which the trade was filled.
-            target_exit_price (float): The original intended exit price for comparison.
-            option_expiry (str, optional): Expiration 'YYYY-MM-DD'.
-            option_type (str, optional): 'call' or 'put'.
-            option_strike (float, optional): Strike price.
-
-        Returns:
-            None
-            
-        Example:
-            >>> db.close_trade_by_attributes("TSLA", 250.0, 255.0)
+            target_exit_price (float, optional): The original intended exit price.
         """
-        occ_symbol = None
-        if all([option_expiry, option_type, option_strike]):
-            occ_symbol = self._generate_occ_symbol(symbol, option_expiry, option_type, option_strike)
-
         with sqlite3.connect(self.db_path) as conn:
             sql = """
-                UPDATE trades 
-                SET actual_exit_price = ?, target_exit_price = ?, status = 'CLOSED', closed_at = CURRENT_TIMESTAMP 
+                UPDATE stock_trades 
+                SET actual_exit_price = ?, target_exit_price = COALESCE(?, target_exit_price), 
+                    status = 'CLOSED', closed_at = CURRENT_TIMESTAMP 
                 WHERE symbol = ? AND status = 'OPEN'
             """
-            if occ_symbol:
-                sql += " AND option_contract = ?"
-                params = (actual_exit_price, target_exit_price, symbol, occ_symbol)
-            else:
-                sql += " AND option_contract IS NULL"
-                params = (actual_exit_price, target_exit_price, symbol)
-            conn.execute(sql, params)
+            conn.execute(sql, (actual_exit_price, target_exit_price, symbol))
+            logger.debug(f"Closed stock trade for {symbol}")
+
+    def close_option_trade(self, symbol: str, option_expiry: str, option_type: str, 
+                          option_strike: float, actual_exit_price: float, 
+                          target_exit_price: Optional[float] = None):
+        """
+        Closes an open option trade.
+
+        Args:
+            symbol (str): The underlying stock ticker.
+            option_expiry (str): Expiration date 'YYYY-MM-DD'.
+            option_type (str): 'call' or 'put'.
+            option_strike (float): Strike price.
+            actual_exit_price (float): The price at which the option was filled.
+            target_exit_price (float, optional): The original intended exit price.
+        """
+        occ_symbol = self._generate_occ_symbol(symbol, option_expiry, option_type, option_strike)
+        
+        with sqlite3.connect(self.db_path) as conn:
+            sql = """
+                UPDATE option_trades 
+                SET actual_exit_price = ?, target_exit_price = COALESCE(?, target_exit_price),
+                    status = 'CLOSED', closed_at = CURRENT_TIMESTAMP 
+                WHERE option_contract = ? AND status = 'OPEN'
+            """
+            conn.execute(sql, (actual_exit_price, target_exit_price, occ_symbol))
+            logger.debug(f"Closed option trade {occ_symbol}")
 
     def get_live_portfolio_status(self):
         """
-        Generates a comprehensive financial status report with a Portfolio Summary.
+        Generates a comprehensive financial status report with Portfolio Summary.
         
-        Outputs a detailed trade-by-trade table followed by an aggregate summary 
-        of realized vs. unrealized gains to assist Agent decision-making.
+        Combines stock and option trades into a unified view with real-time pricing.
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             
-            # 1. Fetch live market data for open trades
-            cursor.execute("SELECT * FROM trades WHERE status = 'OPEN'")
-            open_trades = cursor.fetchall()
-            
+            # Fetch live market data for open trades
             live_data = {}
-            for trade in open_trades:
+            
+            # Get open stock trades
+            cursor.execute("SELECT * FROM stock_trades WHERE status = 'OPEN'")
+            open_stocks = cursor.fetchall()
+            for trade in open_stocks:
                 symbol = trade['symbol']
                 try:
                     ticker_obj = yf.Ticker(symbol)
-                    if trade['option_contract']:
-                        occ_symbol = trade['option_contract']
-                        chain = ticker_obj.option_chain(trade['option_expiration_date'])
-                        df = chain.calls if trade['option_type'].lower() == 'call' else chain.puts
-                        contract_data = df[df['contractSymbol'] == occ_symbol]
-                        if not contract_data.empty:
-                            live_data[occ_symbol] = {'price': contract_data['lastPrice'].values[0]}
-                    else:
-                        live_data[symbol] = {'price': ticker_obj.fast_info['last_price']}
+                    live_data[symbol] = {'price': ticker_obj.fast_info['last_price']}
+                except Exception:
+                    continue
+            
+            # Get open option trades
+            cursor.execute("SELECT * FROM option_trades WHERE status = 'OPEN'")
+            open_options = cursor.fetchall()
+            for trade in open_options:
+                try:
+                    ticker_obj = yf.Ticker(trade['symbol'])
+                    occ_symbol = trade['option_contract']
+                    chain = ticker_obj.option_chain(trade['option_expiration_date'])
+                    df = chain.calls if trade['option_type'].lower() == 'call' else chain.puts
+                    contract_data = df[df['contractSymbol'] == occ_symbol]
+                    if not contract_data.empty:
+                        live_data[occ_symbol] = {'price': contract_data['lastPrice'].values[0]}
                 except Exception:
                     continue
 
-            # 2. Fetch all trades for the report
-            cursor.execute("SELECT * FROM trades ORDER BY status DESC, created_at DESC")
+            # Fetch all trades and combine them with explicit column mapping
+            cursor.execute("""
+                SELECT 
+                    'STOCK' as trade_type,
+                    id,
+                    signal_id,
+                    symbol,
+                    status,
+                    created_at,
+                    closed_at,
+                    entry_price,
+                    actual_exit_price,
+                    shares as quantity,
+                    NULL as option_contract,
+                    NULL as option_entry_price,
+                    NULL as num_of_contracts,
+                    NULL as option_type
+                FROM stock_trades
+                
+                UNION ALL
+                
+                SELECT 
+                    'OPTION' as trade_type,
+                    id,
+                    signal_id,
+                    symbol,
+                    status,
+                    created_at,
+                    closed_at,
+                    NULL as entry_price,
+                    actual_exit_price,
+                    NULL as quantity,
+                    option_contract,
+                    option_entry_price,
+                    num_of_contracts,
+                    option_type
+                FROM option_trades
+                
+                ORDER BY status DESC, created_at DESC
+            """)
             rows = cursor.fetchall()
             
-            header = (f"{'Asset Identifier':<22} | {'Type':<4} | {'Status':<7} | {'Opened':<10} | {'Closed':<10} | "
+            header = (f"{'Asset Identifier':<22} | {'Type':<6} | {'Status':<7} | {'Opened':<10} | {'Closed':<10} | "
                       f"{'Entry':<8} | {'Current':<8} | {'Qty':<4} | {'Total Cost':<10} | {'Curr Value':<10} | {'Total P/L':<9} | {'PnL %'}")
             print("\n" + header)
             print("-" * len(header))
             
-            # Summary Tracking Variables
+            # Summary tracking
             total_invested = 0
             current_equity = 0
             realized_pnl = 0
             unrealized_pnl = 0
 
             for row in rows:
-                is_opt = row['option_contract'] is not None
-                asset_id = row['option_contract'] if is_opt else row['symbol']
-                asset_type = "OPT" if is_opt else "STK"
-                multiplier = 100 if is_opt else 1
+                trade_type = row['trade_type']
+                is_stock = trade_type == 'STOCK'
                 
-                # Pricing & Financials
-                qty = row['num_of_contracts'] if is_opt else row['shares']
-                entry_p = row['option_entry_price']  if is_opt else row['entry_price']
+                if is_stock:
+                    asset_id = row['symbol']
+                    asset_type = "STOCK"
+                    multiplier = 1
+                    qty = row['quantity']
+                    entry_p = row['entry_price']
+                else:
+                    asset_id = row['option_contract']
+                    asset_type = "OPTION"
+                    multiplier = 100
+                    qty = row['num_of_contracts']
+                    entry_p = row['option_entry_price']
+                
                 total_cost = entry_p * qty * multiplier
                 
                 if row['status'] == 'CLOSED':
-                    current_p = row['option_actual_exit_price'] if is_opt else row['actual_exit_price']
+                    current_p = row['actual_exit_price']
                     realized_pnl += (current_p - entry_p) * qty * multiplier
                 else:
                     current_p = live_data.get(asset_id, {}).get('price', entry_p)
@@ -274,11 +396,11 @@ class TradeDatabase:
                 total_pnl = curr_val - total_cost
                 pnl_pct = ((current_p - entry_p) / entry_p) * 100 if entry_p != 0 else 0
                 
-                print(f"{asset_id:<22} | {asset_type:<4} | {row['status']:<7} | {row['created_at'][:10]:<10} | "
-                      f"{ (row['closed_at'][:10] if row['closed_at'] else 'Active'):<10} | {entry_p:>8.2f} | "
+                print(f"{asset_id:<22} | {asset_type:<6} | {row['status']:<7} | {row['created_at'][:10]:<10} | "
+                      f"{(row['closed_at'][:10] if row['closed_at'] else 'Active'):<10} | {entry_p:>8.2f} | "
                       f"{current_p:>8.2f} | {qty:>4} | {total_cost:>10.2f} | {curr_val:>10.2f} | {total_pnl:>9.2f} | {pnl_pct:>7.2f}%")
 
-            # 3. Portfolio Summary Block
+            # Portfolio Summary
             print("-" * len(header))
             print(f"{'PORTFOLIO SUMMARY':^135}")
             print("-" * len(header))
@@ -287,70 +409,159 @@ class TradeDatabase:
             print(f"Total Net P/L:         ${(unrealized_pnl + realized_pnl):,.2f}")
             print("-" * len(header))
 
+
 if __name__ == "__main__":
     import os
     
-    # 1. Reset the database for a clean test run
+    # Reset the database
     if os.path.exists("trading_bot.db"):
         os.remove("trading_bot.db")
         
     db = TradeDatabase("trading_bot.db")
 
-    # 2. Sample 1: A Stock Trade (NVDA)
-    # Includes all mandatory fields to satisfy the TradeSignal BaseModel
-    
+    # Test Case 1: Stock and Option Trade
+    print("=== Test 1: Creating combined stock and option trade ===")
+    trade_signal_1_dict = {
+        "stock_signal": {
+            "symbol": "AAPL",
+            "entry_price": 175.50,
+            "stop_loss": 165.00,
+            "take_profit": 190.00,
+            "confidence_score": 0.85,
+            "shares": 100,
+            "market_research": "Strong earnings report expected. Technical indicators showing bullish momentum.",
+            "stock_recommendation_strategy": "BUY",
+            "stock_recommendation_reasoning": "Breaking above 50-day moving average with strong volume."
+        },
+        "option_signal": {
+            "stop_loss": 5.00,
+            "take_profit": 15.00,
+            "confidence_score": 0.80,
+            "market_research": "IV expansion expected before earnings.",
+            "option_recommendation_strategy": "Buy Long Call",
+            "option_recommendation_reasoning": "High delta setup with positive gamma exposure.",
+            "option_strike": 180.0,
+            "option_expiration_date": "2026-03-20",
+            "option_type": "call",
+            "option_contract": "",
+            "option_entry_price": 8.50,
+            "option_target_exit_price": 15.00,
+            "option_actual_exit_price": 0.0,
+            "num_of_contracts": 5,
+            "implied_volatility": 0.28,
+            "historical_volatility": 0.24,
+            "delta": 0.65,
+            "gamma": 0.05,
+            "theta": -0.08,
+            "vega": 0.12,
+            "rho": 0.04
+        }
+    }
+    db.save_signal(json.dumps(trade_signal_1_dict))
 
-    # 3. Sample 2: An Option Trade (AAPL)
-    # Uses a real-world strike and future expiration date
-    
-    aapl_signal = TradeSignal(
-        symbol="AAPL",
-        entry_price=125.00,
-        stop_loss=115.00,
-        take_profit=160.00,
-        confidence_score=0.88,
-        shares=10,
-        stock_recommendation_strategy="BUY",
-        stock_recommendation_reasoning="Bouncing off 50-day moving average.",
-        market_research="Anticipating volatility expansion before product event.",
-        option_recommendation_strategy="Buy Long Call",
-        option_recommendation_reasoning="High Delta/Gamma setup",
-        option_strike=230.0,
-        option_expiration_date="2026-06-19",  # Standard monthly expiry
-        option_type="call",
-        option_entry_price=12.0, 
-        option_target_exit_price=24.0, 
-        option_actual_exit_price=25.0,
-        num_of_contracts=1,
-        implied_volatility=12.0, 
-        historical_volatility=12.0,
-        delta =12.0, 
-        gamma =12.0, 
-        theta =12.0, 
-        vega =12.0, 
-        rho =12.0,
-        option_contract="xyz"
-    )
-    
+    # Test Case 2: Stock Only (No Option Trade)
+    print("\n=== Test 2: Stock trade only ===")
+    trade_signal_2_dict = {
+        "stock_signal": {
+            "symbol": "NVDA",
+            "entry_price": 485.00,
+            "stop_loss": 460.00,
+            "take_profit": 520.00,
+            "confidence_score": 0.90,
+            "shares": 50,
+            "market_research": "AI chip demand continues to surge.",
+            "stock_recommendation_strategy": "BUY",
+            "stock_recommendation_reasoning": "Pullback to key support level provides entry opportunity."
+        },
+        "option_signal": {
+            "stop_loss": 0.0,
+            "take_profit": 0.0,
+            "confidence_score": 0.0,
+            "market_research": "",
+            "option_recommendation_strategy": "NO TRADE",
+            "option_recommendation_reasoning": "",
+            "option_strike": 0.0,
+            "option_expiration_date": "2026-01-01",
+            "option_type": "call",
+            "option_contract": "",
+            "option_entry_price": 0.0,
+            "option_target_exit_price": 0.0,
+            "option_actual_exit_price": 0.0,
+            "num_of_contracts": 0,
+            "implied_volatility": 0.0,
+            "historical_volatility": 0.0,
+            "delta": 0.0,
+            "gamma": 0.0,
+            "theta": 0.0,
+            "vega": 0.0,
+            "rho": 0.0
+        }
+    }
+    db.save_signal(json.dumps(trade_signal_2_dict))
 
-    # 4. Save signals (The save_signal method will auto-generate the OCC symbol for AAPL)
-    print("Saving signals to database...")
-    #db.save_signal(nvda_signal)
-    db.save_signal(aapl_signal)
+    # Test Case 3: Option Only (No Stock Trade)
+    print("\n=== Test 3: Option trade only ===")
+    trade_signal_3_dict = {
+        "stock_signal": {
+            "symbol": "TSLA",
+            "entry_price": 0.0,
+            "stop_loss": 0.0,
+            "take_profit": 0.0,
+            "confidence_score": 0.0,
+            "shares": 0,
+            "market_research": "High volatility environment.",
+            "stock_recommendation_strategy": "NO TRADE",
+            "stock_recommendation_reasoning": ""
+        },
+        "option_signal": {
+            "stop_loss": 3.00,
+            "take_profit": 12.00,
+            "confidence_score": 0.75,
+            "market_research": "Earnings volatility play.",
+            "option_recommendation_strategy": "Buy Long Put",
+            "option_recommendation_reasoning": "Protective put as hedge against downside risk.",
+            "option_strike": 240.0,
+            "option_expiration_date": "2026-02-20",
+            "option_type": "put",
+            "option_contract": "",
+            "option_entry_price": 6.50,
+            "option_target_exit_price": 12.00,
+            "option_actual_exit_price": 0.0,
+            "num_of_contracts": 3,
+            "implied_volatility": 0.55,
+            "historical_volatility": 0.48,
+            "delta": -0.45,
+            "gamma": 0.03,
+            "theta": -0.12,
+            "vega": 0.18,
+            "rho": -0.06
+        }
+    }
+    db.save_signal(json.dumps(trade_signal_3_dict))
 
-    # 5. Show Live Status (fetches real-time price and IV from yfinance)
-    #print("\n--- Initial Portfolio Status ---")
-    #db.get_live_portfolio_status()
-
-    # 6. Test Closing Logic
-    # We close the NVDA stock trade at a profit
-    print("\nClosing NVDA position...")
-    #db.close_trade_by_attributes(
-    #    symbol="NVDA",
-    #    actual_exit_price=135.50,
-    #    target_exit_price=135.00
-    #)
-
-    # 7. Final Report
-    print("\n--- Final Portfolio Status (1 Closed, 1 Open) ---")
+    # Show initial portfolio
+    print("\n=== Initial Portfolio Status ===")
     db.get_live_portfolio_status()
+
+    # Close a stock trade
+    print("\n=== Closing NVDA stock position ===")
+    db.close_stock_trade(symbol="NVDA", actual_exit_price=505.00, target_exit_price=520.00)
+
+    # Close an option trade
+    print("\n=== Closing AAPL call option ===")
+    db.close_option_trade(
+        symbol="AAPL",
+        option_expiry="2026-03-20",
+        option_type="call",
+        option_strike=180.0,
+        actual_exit_price=14.50,
+        target_exit_price=15.00
+    )
+
+    # Final portfolio status
+    print("\n=== Final Portfolio Status ===")
+    db.get_live_portfolio_status()
+
+    # Reset the database
+    if os.path.exists("trading_bot.db"):
+        os.remove("trading_bot.db")

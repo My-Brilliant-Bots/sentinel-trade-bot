@@ -3,15 +3,20 @@ import logging
 import os
 from re import S
 
+from autogen_agentchat.agents import AssistantAgent
+from autogen_agentchat.messages import TextMessage
+from autogen_core import CancellationToken
 import numpy as np
 import requests
 
+from ai_client_model_registry import ModelClientRegistry
 from data_fetcher import StockDataFetcher
 from logging_config import get_logger
 from options_data_fetcher import OptionsDataFetcher
 from options_strategy import OptionsStrategy
+from prompts import optimize_for_llm
 
-logging = get_logger(__name__)
+logger = get_logger(__name__)
 
 # Embedding Generation (using Ollama)
 def get_embeddings_ollama(text):
@@ -27,7 +32,7 @@ def get_embeddings_ollama(text):
         response.raise_for_status()
         return np.array(response.json()["embedding"])
     except requests.exceptions.RequestException as e:
-        logging.error(f"Error calling Ollama API: {e}")
+        logger.error(f"Error calling Ollama API: {e}")
         return None
 
 def get_options_chain_tool(symbol: str) -> str:
@@ -35,7 +40,7 @@ def get_options_chain_tool(symbol: str) -> str:
      
     """
     
-    logging.debug(f"Check option recommendations for {symbol}")
+    logger.debug(f"Check option recommendations for {symbol}")
 
     fetcher = StockDataFetcher()
     opt_data = fetcher.get_options_data(symbol)
@@ -49,7 +54,7 @@ def get_market_data(symbol: str) -> str:
     
     """
 
-    logging.debug(f"Fetch market data for {symbol}")
+    logger.debug(f"Fetch market data for {symbol}")
 
     fetcher = StockDataFetcher()
     data = fetcher.get_enhanced_stock_data(symbol,'1y',60)
@@ -61,7 +66,7 @@ def get_market_data(symbol: str) -> str:
     
     return data 
     
-def augment_query_with_context(symbol:str,query:str):
+async def augment_query_with_context(symbol:str,query:str):
     stock_details = get_market_data(symbol)
 
     current_price = stock_details['price']
@@ -74,8 +79,6 @@ def augment_query_with_context(symbol:str,query:str):
         max_dte=60,
         max_exps=6
     )
-
-    #option_details = get_options_chain_tool(symbol)
 
     knowledge_base = f"""
       Stock details for {symbol}: {stock_details}
@@ -105,9 +108,27 @@ Based on the data provided, analyze the stock and recommend entry/exit points us
 - Format your response using clear headers and bullet points.
 """
 
-    logging.debug("**** Final Prompt")
-    logging.debug("")
-    logging.debug(augmented_prompt)
-    logging.debug("")
-    
-    return augmented_prompt
+    logger.debug("**** Final Prompt")
+    logger.debug("")
+    logger.debug(augmented_prompt)
+    logger.debug("")
+
+    prompt_agent = AssistantAgent(
+        name="Report_Agent",
+        model_client=ModelClientRegistry.get_or_email_model_client(),
+        reflect_on_tool_use=True,
+        max_tool_iterations=3,
+        system_message=optimize_for_llm
+    )
+
+    logger.debug("Optimizing augemeted query prompt")
+    message = TextMessage(
+        content=f"""Optimize this prompt for an LLM agent  : {augmented_prompt}
+        """, 
+        source="user"
+    )
+
+    response:TextMessage = await prompt_agent.on_messages(messages=[message], cancellation_token=CancellationToken())
+    logger.debug(response.chat_message.content)
+    return response.chat_message.content
+    #return augmented_prompt

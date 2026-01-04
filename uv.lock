@@ -2202,7 +2202,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alpha-vantage" },
-    { name = "autogen-agentchat", extras = ["cerebras"], specifier = "~=0.2" },
+    { name = "autogen-agentchat", extras = ["cerebras", "long-context"], specifier = "~=0.2" },
     { name = "autogen-ext", extras = ["ollama", "openai"], specifier = ">=0.4.0" },
     { name = "ddgs", specifier = ">=9.10.0" },
     { name = "duckduckgo-search", specifier = ">=8.1.1" },

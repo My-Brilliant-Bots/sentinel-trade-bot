@@ -4,13 +4,15 @@ from typing import Optional
 
 from autogen_core.models import ModelInfo
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+
+
 from pydantic import BaseModel
 
 from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-class TradeSignal(BaseModel):
+class StockSignal(BaseModel):
     symbol: str
     entry_price: float
     stop_loss: float
@@ -22,6 +24,14 @@ class TradeSignal(BaseModel):
     # Stock recommendation fields
     stock_recommendation_strategy: str  # e.g., "BUY", "SELL", "HOLD", "NO TRADE"
     stock_recommendation_reasoning: str  # Explanation for stock recommendation
+    
+    
+
+class OptionSignal(BaseModel):
+    stop_loss: float
+    take_profit: float
+    confidence_score: float
+    market_research: str
     
     # Option recommendation fields
     option_recommendation_strategy: str  # e.g., "Buy Long Call", "Buy Long Put", "Covered Call", "NO TRADE"
@@ -47,6 +57,10 @@ class TradeSignal(BaseModel):
     vega: float   # Sensitivity to IV changes
     rho: float   # Sensitivity to interest rates
 
+class TradeSignal(BaseModel):
+    stock_signal: StockSignal
+    option_signal: OptionSignal
+
 class ModelClientRegistry:
     # Singleton storage
     _instances = {}
@@ -61,6 +75,7 @@ class ModelClientRegistry:
                 model_name=model_env,
                 api_type=provider_type
             )
+       
         return cls._instances[key]
 
     @staticmethod
@@ -70,6 +85,7 @@ class ModelClientRegistry:
         api_configs = {
             "cerebras": {
                 "base_url": "https://api.cerebras.ai/v1", 
+                 "response_format": StockSignal,
                 "api_type": "cerebras"
             },
             "ollama": {
@@ -82,6 +98,7 @@ class ModelClientRegistry:
             },
             "openrouter": {
                 "base_url": "https://openrouter.ai/api/v1", 
+                "response_format": OptionSignal,
                 "default_headers": {
                     "HTTP-Referer": "http://localhost:3000", # Required for OpenRouter rankings
                     "X-Title": "StockAnalysisBot",           # Name of your bot

@@ -84,7 +84,7 @@ class StockRecommendAgent:
     # Senior_Analyst uses a third LLM to review the results from the first two LLMs
     senior_analyst = AssistantAgent(
         name="Senior_Analyst",
-        model_client=open_router_finance_model_client,
+        model_client=groq_model_client,
         reflect_on_tool_use=True,
         system_message=senior_analyst_review_prompt
     )
@@ -126,25 +126,48 @@ class StockRecommendAgent:
         Process ALL symbols and provide recommendations for each one.
     """
     
-    augemented_query = augment_query_with_context(symbol_to_analyze,task)
+    augemented_query = await augment_query_with_context(symbol_to_analyze,task)
 
     response = f"""
-    {{
-      "symbol": "{symbol_to_analyze}",
-      "entry_price": 0,
-      "stop_loss": 0,
-      "take_profit": 0,
-      "confidence_score": 0,
-      "shares": 0,
-      "stock_recommendation_strategy": "NO TRADE",
-      "stock_recommendation_reasoning": "NO TRADE",
-      "option_recommendation_strategy": "NO TRADE",
-      "option_recommendation_reasoning": "NO TRADE",
-      "option_strike": 0,
-      "option_expiration_date": "N/A",
-      "option_type": "N/A",
-      "option_contract": "NO TRADE"
-    }}
+    {
+      {
+        "stock_signal": {
+          "symbol": "AAPL",
+          "entry_price": 187.45,
+          "stop_loss": 179.00,
+          "take_profit": 205.00,
+          "confidence_score": 0.78,
+          "shares": 100,
+          "market_research": "Apple continues to benefit from strong ecosystem lock-in and services revenue growth. Recent earnings showed resilience despite macro uncertainty, with stable iPhone demand and expanding margins in the Services segment.",
+          "stock_recommendation_strategy": "BUY",
+          "stock_recommendation_reasoning": "Price remains above the 50-day and 200-day moving averages, indicating a sustained uptrend. RSI at 58 suggests bullish momentum without being overbought. Strong free cash flow and continued share buybacks support further upside."
+        },
+        "option_signal": {
+          "stop_loss": 3.20,
+          "take_profit": 6.50,
+          "confidence_score": 0.72,
+          "market_research": "Implied volatility remains elevated ahead of upcoming earnings, providing an opportunity for directional option strategies. Liquidity is strong in near-the-money strikes with tight bid-ask spreads.",
+          "option_recommendation_strategy": "Buy Long Call",
+          "option_recommendation_reasoning": "A long call captures upside participation with defined risk. The selected strike provides a balance between delta exposure and time decay, benefiting from a continued bullish move in the underlying stock.",
+          "option_strike": 190.0,
+          "option_expiration_date": "2026-01-16",
+          "option_type": "call",
+          "option_contract": "AAPL 190 CALL 2026-01-16",
+          "option_entry_price": 4.85,
+          "option_target_exit_price": 7.00,
+          "option_actual_exit_price": 0.00,
+          "num_of_contracts": 2,
+          "implied_volatility": 0.32,
+          "historical_volatility": 0.27,
+          "delta": 0.48,
+          "gamma": 0.06,
+          "theta": -0.04,
+          "vega": 0.11,
+          "rho": 0.09
+        }
+      }
+
+    }
     """
 
     if (skip_execution):

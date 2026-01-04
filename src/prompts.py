@@ -7,17 +7,16 @@ Summarize the findings into:
    3. Macro Sentiment.
 Output your response in pure json only matching this schema:
 
-    {
-        "symbol": "TICKER",
-        "market_research": "
-            1. Direct Ticker News 
-            Place your content Direct Ticker News content here
-            2. Sector/Commodity Health 
-            Place your content Sector/Commodity Health content here
-            3. Macro Sentiment.
-            Place your content Macro Sentiment content here
-        "
-    }
+{
+  "stock_signal": {
+    "symbol": "Ticker",
+    "market_research": "Apple continues to benefit from strong ecosystem lock-in and services revenue growth. Recent earnings showed resilience despite macro uncertainty, with stable iPhone demand and expanding margins in the Services segment.",
+  },
+  "option_signal": {
+    "option_contract": "Ticker",
+    "market_research": "Implied volatility remains elevated ahead of upcoming earnings, providing an opportunity for directional option strategies. Liquidity is strong in near-the-money strikes with tight bid-ask spreads.",
+  }
+}
 """
 
 technical_analyst_prompt="""
@@ -82,7 +81,7 @@ You are the Derivatives Specialist.
        - implied_volatlity: The Implied Volatitly 
        - historical_volatility: The historical volatiltiy
        - option greeks: delta, gamma,theta, vega, rho
-       - use the option contract's preimium while recommending option_entry_price, option_target_exit_price, option_actual_exit_price
+       - use the option contract's preimium while recommending option_entry_price, option_target_exit_price, option_actual_exit_price, stop_loss, take_profit
     3. If no options are recommended, set:
        - option_recommendation_strategy: "NO TRADE"
        - option_recommendation_reasoning: Clear reason why no options were recommended (e.g., "No suitable options found: [reason from tool]")
@@ -90,7 +89,9 @@ You are the Derivatives Specialist.
 
     Output your response in pure json only matching this schema:
     {
-        "symbol": "TICKER",
+        "stop_loss": 0.0 or null,
+       "take_profit": 0.0 or null,
+       "confidence_score": 0.0 or null,
         "option_recommendation_strategy": "Buy Long Call/Buy Long Put/Covered Call/NO TRADE",
         "option_recommendation_reasoning": "explanation",
         "option_strike": 0.0 or null,
@@ -109,6 +110,7 @@ You are the Derivatives Specialist.
         "vega": 0.0 or null,
         "rho": 0.0 or null
     }
+    
     
     IMPORTANT: 
     - Always extract the exact strike price, expiration date, implied/historical volatility, and greeks from the tool response. Do not invent or estimate these values.
@@ -238,7 +240,7 @@ Your final TradeSignal reasoning must explain how the live news justifies the te
    - <0.5: Weak signals, recommend NO TRADE
 
 Do not output as markdown. Output as pure JSON array string. Do not wrap with ``` markdown.
-Example format: [{"symbol": "AAPL", ...}, {"symbol": "MSFT", ...}]
+Example format: [{"stock_signal": { "symbol": "AAPL",...},"option_signal": {"option_contract": "AAPL 200 CALL 2025-03-21",...}}]
 """
 
 
@@ -312,4 +314,21 @@ Directly nested or paired with the Stock Card, create a secondary styled section
 - **Styling**: Use inline CSS for all elements to ensure 100% compatibility with email clients (Gmail, Outlook, etc.).
 - **Logic**: If a symbol contains both stock and option data, ensure they are grouped together visually so the user understands the relationship between the equity move and the hedge/leverage.
    
+"""
+
+optimize_for_llm="""
+You are an expert prompt engineer specializing in lossless context optimization for large language models.
+
+Your task is to optimize the provided prompt by reducing token usage while preserving all decision-critical information required for accurate execution.
+
+Rules:
+- Remove redundancy, verbosity, and non-essential narrative
+- Preserve all data, constraints, and instructions necessary to complete the task
+- Do not introduce new assumptions, interpretations, or data
+- Do not modify numerical values, symbols, or formatting unless explicitly instructed
+- Do not summarize analytical or market data unless explicitly marked as optional
+
+The optimized prompt must be functionally equivalent to the original and produce the same outputs when used by an LLM.
+
+Output only the optimized prompt. Do not include explanations.
 """
