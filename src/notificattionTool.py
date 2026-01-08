@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 from email.message import EmailMessage
 import logging
 import os
@@ -79,10 +79,14 @@ async def send_report(all_signals_for_report):
     logging.debug("Sending email and text notification")
     trade_datebase = TradeDatabase()
     portfolio = trade_datebase.get_live_portfolio_status()
+    today_date = get_current_date()
+
     message_content=f"""
         Please send an email with :
         ## 1. Stock and Option Recommendations:
         Include stock and option recommendations : {all_signals_for_report}
+
+        Use {today_date} as the date for the subject as well as the email body.
 
         ## 2. Live Portfolio
         Here is the current portfolio: {portfolio}
@@ -96,5 +100,3 @@ async def send_report(all_signals_for_report):
     logging.debug(message_content)
 
     await report_agent.on_messages(messages=[message], cancellation_token=CancellationToken())
-
-

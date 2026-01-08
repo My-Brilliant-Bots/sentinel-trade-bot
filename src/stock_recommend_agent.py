@@ -17,7 +17,8 @@ from prompts import (
    portfolio_data_manager_system_prompt,
    senior_analyst_review_prompt,
    technical_analyst_prompt,
-   market_researcher_prompt
+   market_researcher_prompt,
+   mock_response_prompt
 )
 from ragQuery import augment_query_with_context
 from search_tool import SearchTool
@@ -35,6 +36,17 @@ class StockRecommendAgent:
       self.deep_market_research, 
       strict=True,
       description="Provides a comprehensive 3-tier market report for any stock ticker.")
+    stock_data = StockDataFetcher()
+
+    stock_tool = FunctionTool(
+      stock_data.get_enhanced_stock_data, 
+      strict=True,
+      description="Provides stock data for any stock ticker.")
+    
+    option_tool = FunctionTool(
+      stock_data.get_options_data, 
+      strict=True,
+      description="Provides option data for any stock ticker.")
 
     cerebras_model_client=ModelClientRegistry.get_cerebras_client()
     open_router_finance_model_client=ModelClientRegistry.get_or_finance_client()
@@ -44,7 +56,7 @@ class StockRecommendAgent:
     market_researcher = AssistantAgent(
       name="Market_Researcher",
       model_client=open_router_general_purpose_model_client,
-      tools=[research_tool],
+      tools=[research_tool,stock_tool,option_tool],
       reflect_on_tool_use=True,
       system_message=market_researcher_prompt
     )
@@ -92,7 +104,7 @@ class StockRecommendAgent:
     portfolio_data_manager = AssistantAgent(
           name="Portfolio_Data_Manager",
           model_client=ModelClientRegistry.get_or_email_model_client(),
-          tools=[db.save_signal],
+          tools=[db.save_signal,db.close_option_trade,db.close_stock_trade],
           max_tool_iterations=1,
           reflect_on_tool_use=True,
           system_message=portfolio_data_manager_system_prompt
@@ -128,51 +140,10 @@ class StockRecommendAgent:
     
     augemented_query = await augment_query_with_context(symbol_to_analyze,task)
 
-    response = f"""
-    {
-      {
-        "stock_signal": {
-          "symbol": "AAPL",
-          "entry_price": 187.45,
-          "stop_loss": 179.00,
-          "take_profit": 205.00,
-          "confidence_score": 0.78,
-          "shares": 100,
-          "market_research": "Apple continues to benefit from strong ecosystem lock-in and services revenue growth. Recent earnings showed resilience despite macro uncertainty, with stable iPhone demand and expanding margins in the Services segment.",
-          "stock_recommendation_strategy": "BUY",
-          "stock_recommendation_reasoning": "Price remains above the 50-day and 200-day moving averages, indicating a sustained uptrend. RSI at 58 suggests bullish momentum without being overbought. Strong free cash flow and continued share buybacks support further upside."
-        },
-        "option_signal": {
-          "stop_loss": 3.20,
-          "take_profit": 6.50,
-          "confidence_score": 0.72,
-          "market_research": "Implied volatility remains elevated ahead of upcoming earnings, providing an opportunity for directional option strategies. Liquidity is strong in near-the-money strikes with tight bid-ask spreads.",
-          "option_recommendation_strategy": "Buy Long Call",
-          "option_recommendation_reasoning": "A long call captures upside participation with defined risk. The selected strike provides a balance between delta exposure and time decay, benefiting from a continued bullish move in the underlying stock.",
-          "option_strike": 190.0,
-          "option_expiration_date": "2026-01-16",
-          "option_type": "call",
-          "option_contract": "AAPL 190 CALL 2026-01-16",
-          "option_entry_price": 4.85,
-          "option_target_exit_price": 7.00,
-          "option_actual_exit_price": 0.00,
-          "num_of_contracts": 2,
-          "implied_volatility": 0.32,
-          "historical_volatility": 0.27,
-          "delta": 0.48,
-          "gamma": 0.06,
-          "theta": -0.04,
-          "vega": 0.11,
-          "rho": 0.09
-        }
-      }
-
-    }
-    """
-
     if (skip_execution):
       logger.debug("Skipping LLM calls. Returning canned response")
-      return response
+      return  mock_response_prompt
+
 
     logger.debug("Trading Team Start")
     

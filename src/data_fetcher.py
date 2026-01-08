@@ -26,8 +26,8 @@ class StockDataFetcher:
     def get_enhanced_stock_data(
     self,
     symbol: str, 
-    period: str = "1y", 
-    history_window: int = 60  # Days of history to return for LLMs (configurable)
+    period: str , 
+    history_window: int  # Days of history to return for LLMs (configurable)
     ) -> Optional[Dict[str, any]]:
 
         """
@@ -246,7 +246,7 @@ class StockDataFetcher:
             print(f"Error fetching data for {symbol}: {e}")
             return {"error": str(e), "symbol": symbol}
     
-    def get_options_data(self, symbol: str, max_dte: int = 60) -> Dict:
+    def get_options_data(self, symbol: str, max_dte: int) -> Dict:
         """
         Fetch options data for near-term expirations
         

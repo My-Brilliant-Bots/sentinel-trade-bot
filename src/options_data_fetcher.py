@@ -4,6 +4,10 @@ import yfinance as yf
 from scipy.stats import norm
 from datetime import datetime, timedelta
 
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 class OptionsAnalytics:
     @staticmethod
     def calculate_greeks(S, K, t, r, sigma, is_call=True):
@@ -39,6 +43,9 @@ class OptionsAnalytics:
 
 class OptionsDataFetcher:
     def get_options_for_llm(self, symbol: str, current_price: float, max_dte: int = 5, max_exps: int = 2):
+        
+        logger.debug(f"Fetching options for {symbol}")
+        
         ticker = yf.Ticker(symbol)
         # Calculate Historical Volatility for the header
         hist = ticker.history(period="1mo")
@@ -50,6 +57,7 @@ class OptionsDataFetcher:
         valid_exps = [e for e in ticker.options if (datetime.strptime(e, "%Y-%m-%d") - today).days <= max_dte][:max_exps]
 
         for exp in valid_exps:
+            
             chain = ticker.option_chain(exp)
             dte = (datetime.strptime(exp, "%Y-%m-%d") - today).days
             t = max(dte, 1) / 365.0
@@ -57,19 +65,24 @@ class OptionsDataFetcher:
             output += f"\n--- {exp} ({dte} DTE) ---\n"
             
             for label, data, is_call in [("Calls", chain.calls, True), ("Puts", chain.puts, False)]:
+                
                 output += f"\nTop 5 {label} by Volume:\n"
                 # Filter for liquidity and proximity to price
                 mask = (data['strike'] >= current_price * 0.90) & (data['strike'] <= current_price * 1.10)
                 df = data[mask].sort_values('volume', ascending=False).head(5)
                 
                 for i, (_, row) in enumerate(df.iterrows(), 1):
-                    g = OptionsAnalytics.calculate_greeks(current_price, row['strike'], t, 0.043, row['impliedVolatility'], is_call)
-                    
-                    # 1. LEGACY PART: Keeps "Strike $XXX (ATM): Premium $X, IVX%, Vol X"
-                    # 2. NEW PART: Appends "Δ X, Γ X, Θ X, ν X, PoP X%"
-                    output += (f"{i}. Strike ${row['strike']:.0f} ({'ATM' if abs(row['strike']-current_price)/current_price < 0.02 else 'OTM'}): "
-                              f"Premium ${row['lastPrice']:.2f}, IV{int(row['impliedVolatility']*100)}%, Vol {int(row['volume'])}, "
-                              f"Delta {g['delta']}, Gamma {g['gamma']}, Theta {g['theta']}, Vega {g['vega']}, PoP {g['pop']}%\n")
+                   
+                    try:
+                        g = OptionsAnalytics.calculate_greeks(current_price, row['strike'], t, 0.043, row['impliedVolatility'], is_call)
+                        
+                        # 1. LEGACY PART: Keeps "Strike $XXX (ATM): Premium $X, IVX%, Vol X"
+                        # 2. NEW PART: Appends "Δ X, Γ X, Θ X, ν X, PoP X%"
+                        output += (f"{i}. Strike ${row['strike']:.0f} ({'ATM' if abs(row['strike']-current_price)/current_price < 0.02 else 'OTM'}): "
+                                f"Premium ${row['lastPrice']:.2f}, IV{int(row['impliedVolatility']*100)}%, Vol {int(row['volume'])}, "
+                                f"Delta {g['delta']}, Gamma {g['gamma']}, Theta {g['theta']}, Vega {g['vega']}, PoP {g['pop']}%\n")
+                    except Exception as e:
+                        logger.error(e)
         return output
 
 if __name__ == "__main__":

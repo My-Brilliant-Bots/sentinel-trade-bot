@@ -13,8 +13,8 @@ from ai_client_model_registry import ModelClientRegistry
 from data_fetcher import StockDataFetcher
 from logging_config import get_logger
 from options_data_fetcher import OptionsDataFetcher
-from options_strategy import OptionsStrategy
 from prompts import optimize_for_llm
+from trade_database import TradeDatabase
 
 logger = get_logger(__name__)
 
@@ -79,11 +79,19 @@ async def augment_query_with_context(symbol:str,query:str):
         max_dte=60,
         max_exps=6
     )
+    trade_database = TradeDatabase()
+    live_portfolio = trade_database.get_live_portfolio_status()
+
 
     knowledge_base = f"""
+      ### Stock Details 
       Stock details for {symbol}: {stock_details}
-
+      
+      ### Options Details
       Option details for {symbol}: {options_text}
+
+      ### Live Portfolio
+      {live_portfolio}
 
     """
     
@@ -131,4 +139,3 @@ Based on the data provided, analyze the stock and recommend entry/exit points us
     response:TextMessage = await prompt_agent.on_messages(messages=[message], cancellation_token=CancellationToken())
     logger.debug(response.chat_message.content)
     return response.chat_message.content
-    #return augmented_prompt

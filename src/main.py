@@ -10,14 +10,14 @@ from logging_config import get_logger
 from notificattionTool import send_report
 from stock_recommend_agent import StockRecommendAgent
 
-logging = get_logger(__name__)
-logging.debug("Checking RSI 2 conditions...") 
+logger = get_logger(__name__)
+logger.debug("Checking RSI 2 conditions...") 
 
 load_dotenv()
 sys.tracebacklimit = 0
 
 async def run_agentic_analysis():
-    logging.debug("--- STARTING AGENTIC ANALYSIS ---")
+    logger.debug("--- STARTING AGENTIC ANALYSIS ---")
 
     fetcher = StockDataFetcher()
     sp500 = fetcher.get_sp500_symbols()
@@ -28,7 +28,7 @@ async def run_agentic_analysis():
     
     trending_symbols = fetcher.get_trending_stocks(sp500, top_n=max_stocks_to_recommended)
     
-    logging.debug(f"Analyzing symbols: {trending_symbols}")
+    logger.debug(f"Analyzing symbols: {trending_symbols}")
     
     all_signals_for_report = []
 
@@ -38,23 +38,23 @@ async def run_agentic_analysis():
 
         # Set skip_llm to True while debugging code that does not need LLM interaction.
         skip_llm:bool = False
-        logging.debug(f"Start Recommendation for {symbol} ")
+        logger.debug(f"Start Recommendation for {symbol} ")
         try:
             trade_recommendation = await trade_recommendation_agent.recommend_trades(symbol,skip_llm)
         except Exception as e:
-             logging.debug(f"Skip Recommendation for {symbol} because of {e} error")
+             logger.debug(f"Skip Recommendation for {symbol} because of {e} error")
              continue
-        logging.debug(f"End Recommendation for {symbol} ")
+        logger.debug(f"End Recommendation for {symbol} ")
        
         # Process the recommendation
         if isinstance(trade_recommendation, str):
             recommendation_json = trade_recommendation.replace("```json", "").replace("```", "").strip()
-            logging.debug(f"Recommendation is {recommendation_json}")
+            logger.debug(f"Recommendation is {recommendation_json}")
             all_signals_for_report.append(recommendation_json)
         
 
         if i < len(trending_symbols) - 1:  
-            logging.debug("Waiting 61 seconds to avoid rate limit...")
+            logger.debug("Waiting 61 seconds to avoid rate limit...")
             await asyncio.sleep(61) 
     
     await send_report(all_signals_for_report)

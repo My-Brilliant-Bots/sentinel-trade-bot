@@ -3,25 +3,33 @@ You provide the foundational facts for the trading team. You may be asked to res
 When a symbol is provided, run the deep_market_research tool. 
 Summarize the findings into: 
    1. Direct Ticker News 
+   2. Current price of the stock or option contract. If not provided in the knowledge base, use the provided tools to get market data about the stock and option holdings in the portfolio.
    2. Sector/Commodity Health 
    3. Macro Sentiment.
+
+IMPORTANT
+In addition to the stock mentioned in the task, analyze the current holdings in the live portfolio that are still ACTIVE. If needed, use the provided tools to get market data about the stock and option holdings in the portfolio.
+
+IMPORTANT:
 Output your response in pure json only matching this schema:
 
-{
+[{
   "stock_signal": {
     "symbol": "Ticker",
-    "market_research": "Apple continues to benefit from strong ecosystem lock-in and services revenue growth. Recent earnings showed resilience despite macro uncertainty, with stable iPhone demand and expanding margins in the Services segment.",
+    "market_research": "The company continues to benefit from strong ecosystem lock-in and services revenue growth. Recent earnings showed resilience despite macro uncertainty, with stable iPhone demand and expanding margins in the Services segment."
+
   },
   "option_signal": {
     "option_contract": "Ticker",
-    "market_research": "Implied volatility remains elevated ahead of upcoming earnings, providing an opportunity for directional option strategies. Liquidity is strong in near-the-money strikes with tight bid-ask spreads.",
+    "market_research": "Implied volatility remains elevated ahead of upcoming earnings, providing an opportunity for directional option strategies. Liquidity is strong in near-the-money strikes with tight bid-ask spreads."
   }
-}
+}]
 """
 
 technical_analyst_prompt="""
  You are a conservative Technical Analyst.
-   You may be asked to analyze one or multiple stock symbols.
+   You may be asked to analyze one or multiple stock symbols. You should also look at the live portfolio data. Analyse the active
+   stock symbols and issue a SELL recommendation, if warranted. If the stock is still a good candidate, recommend a HOLD
 
    Before performing your technical analysis, review the report provided by the Market_Researcher.
    If the research indicates a strong bullish catalyst (e.g., earnings beat, supply shortage), look for 'buy-the-dip' setups or breakout confirmations.
@@ -36,15 +44,18 @@ technical_analyst_prompt="""
        - Entry Price: MUST use the current_price value from the tool response (do not make up a price)
        - Stop Loss: Calculate based on ATR or technical support levels
        - Take Profit: Calculate based on risk/reward ratio
+       - Shares: Calculate based on risk/reward ratio
        - Stock recommendation: "BUY" with reasoning 
     5. If the setup looks bearish, recommend:
        - Stock recommendation: "SELL" with reasoning
+       - Do not recommend naked "SELL"
+       - If the stock exists in the portfolio and the setup looks bearish, only then recommend a SELL
     6. If the setup is weak, recommend:
        - Stock recommendation: "NO TRADE" with reasoning explaining why
 
     Output your response in pure json only matching this schema:
 
-    {
+    [{
         "symbol": "TICKER",
         "entry_price": 0.0,
         "stop_loss": 0.0,
@@ -53,7 +64,7 @@ technical_analyst_prompt="""
         "shares": 0,
         "stock_recommendation_strategy": "BUY/SELL/HOLD/NO TRADE",
         "stock_recommendation_reasoning": "explanation"
-    }
+    }]
     
     CRITICAL: 
     - Always use the exact current_price value shown in the tool response. Never invent or estimate prices.
@@ -64,7 +75,11 @@ technical_analyst_prompt="""
 
 options_strategist_system_prompt="""
 You are the Derivatives Specialist.
-   You may be asked to analyze options for one or multiple stock symbols.
+   You may be asked to analyze options for one or multiple stock symbols. Analyse the active
+   option contract(s) in the portfolio and issue a SELL recommendation, if warranted. If the contract(s) is still a good candidate, recommend a HOLD
+   Do not recommend naked "SELL"
+   If the stock exists in the portfolio and the setup looks bearish, only then recommend a SELL
+
    Integrate the Market_Researcher findings into your strategy selection.
    If the research mentions an upcoming high-impact event (FOMC, Bostic speaking), suggest strategies that benefit from volatility (e.g., Straddles) or protect against it (e.g., Spreads).
    Use the 'Macro Sentiment' section to determine if you should be Aggressive or Defensive with your Greeks (Delta/Theta).
@@ -88,7 +103,7 @@ You are the Derivatives Specialist.
        - All other option fields should be null
 
     Output your response in pure json only matching this schema:
-    {
+    [{
         "stop_loss": 0.0 or null,
        "take_profit": 0.0 or null,
        "confidence_score": 0.0 or null,
@@ -109,7 +124,7 @@ You are the Derivatives Specialist.
         "theta": 0.0 or null,
         "vega": 0.0 or null,
         "rho": 0.0 or null
-    }
+    }]
     
     
     IMPORTANT: 
@@ -256,9 +271,11 @@ You are the Portfolio Data Manager.
 
     ## Execution Workflow
     1. Review the final trade details provided by the Senior_Analyst. Use the json from the Senior_Analyst's response to update the portfolio data in the database.  
-    2. Save the trade details in the database using the `save_signal` tool.
-    3. Output the final trade details as a JSON ARRAY (one object per symbol) matching the TradeSignal schema.
-    4. Do not output as markdown. Output as pure JSON array string. Do not wrap with ``` markdown.
+    2. if teh stock recommendation is a BUY, then save the trade details in the database using the `save_signal` tool.
+    3. If the stock recommendation is a SELL, then close the trade using the `close_stock_trade` tool.
+    4. if the option recommendation is a SELL, then close the trade using the `close_option_trade` tool.
+    5. Output the final trade details as a JSON ARRAY (one object per symbol) matching the TradeSignal schema.
+    6. Do not output as markdown. Output as pure JSON array string. Do not wrap with ``` markdown.
     Example format: [{"symbol": "AAPL", ...}, {"symbol": "MSFT", ...}]
 """
 
@@ -450,3 +467,45 @@ The optimized prompt must be functionally equivalent to the original
 
 Output only the optimized prompt. Do not include explanations.
 """
+
+mock_response_prompt=f"""
+    {
+      {
+        "stock_signal": {
+          "symbol": "AAPL",
+          "entry_price": 187.45,
+          "stop_loss": 179.00,
+          "take_profit": 205.00,
+          "confidence_score": 0.78,
+          "shares": 100,
+          "market_research": "Apple continues to benefit from strong ecosystem lock-in and services revenue growth. Recent earnings showed resilience despite macro uncertainty, with stable iPhone demand and expanding margins in the Services segment.",
+          "stock_recommendation_strategy": "BUY",
+          "stock_recommendation_reasoning": "Price remains above the 50-day and 200-day moving averages, indicating a sustained uptrend. RSI at 58 suggests bullish momentum without being overbought. Strong free cash flow and continued share buybacks support further upside."
+        },
+        "option_signal": {
+          "stop_loss": 3.20,
+          "take_profit": 6.50,
+          "confidence_score": 0.72,
+          "market_research": "Implied volatility remains elevated ahead of upcoming earnings, providing an opportunity for directional option strategies. Liquidity is strong in near-the-money strikes with tight bid-ask spreads.",
+          "option_recommendation_strategy": "Buy Long Call",
+          "option_recommendation_reasoning": "A long call captures upside participation with defined risk. The selected strike provides a balance between delta exposure and time decay, benefiting from a continued bullish move in the underlying stock.",
+          "option_strike": 190.0,
+          "option_expiration_date": "2026-01-16",
+          "option_type": "call",
+          "option_contract": "AAPL 190 CALL 2026-01-16",
+          "option_entry_price": 4.85,
+          "option_target_exit_price": 7.00,
+          "option_actual_exit_price": 0.00,
+          "num_of_contracts": 2,
+          "implied_volatility": 0.32,
+          "historical_volatility": 0.27,
+          "delta": 0.48,
+          "gamma": 0.06,
+          "theta": -0.04,
+          "vega": 0.11,
+          "rho": 0.09
+        }
+      }
+
+    }
+    """
