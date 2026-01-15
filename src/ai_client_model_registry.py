@@ -85,7 +85,6 @@ class ModelClientRegistry:
         api_configs = {
             "cerebras": {
                 "base_url": "https://api.cerebras.ai/v1", 
-                 "response_format": StockSignal,
                 "api_type": "cerebras"
             },
             "ollama": {
@@ -98,7 +97,6 @@ class ModelClientRegistry:
             },
             "openrouter": {
                 "base_url": "https://openrouter.ai/api/v1", 
-                "response_format": OptionSignal,
                 "default_headers": {
                     "HTTP-Referer": "http://localhost:3000", # Required for OpenRouter rankings
                     "X-Title": "StockAnalysisBot",           # Name of your bot
@@ -114,7 +112,6 @@ class ModelClientRegistry:
         # 2. Start with common arguments used by EVERY client
         client_args = {
             "model": os.environ.get(model_name),
-            "response_format": TradeSignal,
             "model_info": ModelInfo(
                 vision=True, 
                 function_calling=True, 

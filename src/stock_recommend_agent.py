@@ -65,14 +65,14 @@ class StockRecommendAgent:
     # to analyse the same stock
     analyst_1 = AssistantAgent(
       name="Technical_Analyst_1",
-      model_client=cerebras_model_client,
+      model_client=open_router_general_purpose_model_client,
       reflect_on_tool_use=True,
       system_message=technical_analyst_prompt
     )
 
     analyst_2 = AssistantAgent(
       name="Technical_Analyst_2",
-      model_client=open_router_finance_model_client,
+      model_client=open_router_general_purpose_model_client,
       reflect_on_tool_use=True,
       system_message=technical_analyst_prompt
     )
@@ -81,14 +81,14 @@ class StockRecommendAgent:
     # to analyse the same stock
     options_agent_1 = AssistantAgent(
         name="Options_Strategist_1",
-        model_client=cerebras_model_client,
+        model_client=open_router_general_purpose_model_client,
         reflect_on_tool_use=True,
         system_message=options_strategist_system_prompt
     )
 
     options_agent_2 = AssistantAgent(
         name="Options_Strategist_2",
-        model_client=open_router_finance_model_client,
+        model_client=open_router_general_purpose_model_client,
         reflect_on_tool_use=True,
         system_message=options_strategist_system_prompt
     )
@@ -96,7 +96,7 @@ class StockRecommendAgent:
     # Senior_Analyst uses a third LLM to review the results from the first two LLMs
     senior_analyst = AssistantAgent(
         name="Senior_Analyst",
-        model_client=groq_model_client,
+        model_client=open_router_general_purpose_model_client,
         reflect_on_tool_use=True,
         system_message=senior_analyst_review_prompt
     )
@@ -118,8 +118,9 @@ class StockRecommendAgent:
           analyst_2, 
           options_agent_2,
           senior_analyst,
-          portfolio_data_manager],
-        max_turns=7)
+          #portfolio_data_manager
+        ],
+        max_turns=6)
 
   async def recommend_trades( self,symbol_to_analyze, skip_execution:bool=True ):
     # Create a fresh team instance to reset conversation history
