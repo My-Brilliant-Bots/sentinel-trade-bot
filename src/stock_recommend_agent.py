@@ -4,6 +4,8 @@ import logging
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.messages import TextMessage
 from autogen_agentchat.teams import RoundRobinGroupChat
+from autogen_agentchat.teams import SelectorGroupChat
+from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermination
 from autogen_core import CancellationToken
 from autogen_core.tools import FunctionTool
 from openai import RateLimitError
@@ -55,6 +57,7 @@ class StockRecommendAgent:
 
     market_researcher = AssistantAgent(
       name="Market_Researcher",
+      description="Conducts deep market research using web search to provide context for stock analysis.",
       model_client=open_router_general_purpose_model_client,
       tools=[research_tool,stock_tool,option_tool],
       reflect_on_tool_use=True,
@@ -65,6 +68,7 @@ class StockRecommendAgent:
     # to analyse the same stock
     analyst_1 = AssistantAgent(
       name="Technical_Analyst_1",
+      description="Performs technical analysis on stocks using market data and research reports.Recommends trades based on established momentum strategies.",
       model_client=open_router_general_purpose_model_client,
       reflect_on_tool_use=True,
       system_message=technical_analyst_prompt
@@ -72,6 +76,7 @@ class StockRecommendAgent:
 
     analyst_2 = AssistantAgent(
       name="Technical_Analyst_2",
+      description="Performs technical analysis on stocks using market data and research reports.Recommends trades based on established momentum strategies.",
       model_client=open_router_general_purpose_model_client,
       reflect_on_tool_use=True,
       system_message=technical_analyst_prompt
@@ -81,6 +86,7 @@ class StockRecommendAgent:
     # to analyse the same stock
     options_agent_1 = AssistantAgent(
         name="Options_Strategist_1",
+        description="Specializes in options trading strategies based on market data and research reports.",
         model_client=open_router_general_purpose_model_client,
         reflect_on_tool_use=True,
         system_message=options_strategist_system_prompt
@@ -88,6 +94,7 @@ class StockRecommendAgent:
 
     options_agent_2 = AssistantAgent(
         name="Options_Strategist_2",
+        description="Specializes in options trading strategies based on market data and research reports.",
         model_client=open_router_general_purpose_model_client,
         reflect_on_tool_use=True,
         system_message=options_strategist_system_prompt
@@ -96,11 +103,12 @@ class StockRecommendAgent:
     # Senior_Analyst uses a third LLM to review the results from the first two LLMs
     senior_analyst = AssistantAgent(
         name="Senior_Analyst",
+        description="Reviews and consolidates trade recommendations from multiple analysts to produce final trade suggestions.One stock recommendation and one option recommendation per stock.",
         model_client=open_router_general_purpose_model_client,
         reflect_on_tool_use=True,
         system_message=senior_analyst_review_prompt
     )
-
+    """
     portfolio_data_manager = AssistantAgent(
           name="Portfolio_Data_Manager",
           model_client=ModelClientRegistry.get_or_email_model_client(),
@@ -109,8 +117,9 @@ class StockRecommendAgent:
           reflect_on_tool_use=True,
           system_message=portfolio_data_manager_system_prompt
       )
-    
-    """Create a fresh trading team instance with reset conversation history."""
+    """
+
+    """Create a fresh trading team instance with reset conversation history.
     return RoundRobinGroupChat(
         participants=[market_researcher,
           analyst_1, 
@@ -121,6 +130,61 @@ class StockRecommendAgent:
           #portfolio_data_manager
         ],
         max_turns=6)
+    """
+    
+    # Selector prompt
+    # Selector prompt
+    selector_prompt = """
+  You are orchestrating a trading analysis workflow. Select the next agent strategically.
+
+AVAILABLE AGENTS:
+- Market_Researcher: Gathers fundamental market data, news, and context (SPEAK FIRST)
+- Technical_Analyst_1: Provides stock recommendations using technical analysis
+- Technical_Analyst_2: Provides stock recommendations using technical analysis (independent view)
+- Options_Strategist_1: Recommends options strategies and contract details
+- Options_Strategist_2: Recommends options strategies and contract details (independent view)
+- Senior_Analyst: Reviews all 4 analyst recommendations and makes final decision (SPEAK LAST)
+
+WORKFLOW STAGES:
+1. **Research Phase**: Market_Researcher provides fundamental context
+2. **Analysis Phase**: Both Technical Analysts AND both Options Strategists provide independent recommendations
+3. **Review Phase**: Senior_Analyst synthesizes all 4 recommendations into final decision
+
+SELECTION RULES:
+1. Start with Market_Researcher (if not spoken yet)
+2. After research, select analysts in any order until all 4 have spoken:
+   - Technical_Analyst_1 and Technical_Analyst_2 (both must speak)
+   - Options_Strategist_1 and Options_Strategist_2 (both must speak)
+3. Ensure each analyst speaks EXACTLY ONCE
+4. Only select Senior_Analyst AFTER all 4 analysts have provided recommendations
+5. After Senior_Analyst speaks, return "TERMINATE"
+
+IMPORTANT:
+- Do NOT allow analysts to speak multiple times
+- Do NOT select Senior_Analyst until all 4 analysts have contributed
+- Track which agents have already spoken
+
+Based on the conversation history, who should speak next? If workflow is complete, return "TERMINATE".
+"""
+
+    trading_team = SelectorGroupChat(
+      participants=[
+        market_researcher,      # Speaks first
+        analyst_1,              # Technical analyst 1
+        analyst_2,              # Technical analyst 2
+        options_agent_1,        # Options strategist 1
+        options_agent_2,        # Options strategist 2
+        senior_analyst          # Speaks last, synthesizes everything
+    ],
+    model_client=open_router_general_purpose_model_client,
+    selector_prompt=selector_prompt,
+    termination_condition=TextMentionTermination("TERMINATE") | MaxMessageTermination(10),
+    allow_repeated_speaker=False  # Prevents same agent from speaking consecutively
+   ) 
+   
+    return trading_team
+
+
 
   async def recommend_trades( self,symbol_to_analyze, skip_execution:bool=True ):
     # Create a fresh team instance to reset conversation history
