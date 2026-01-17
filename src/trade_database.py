@@ -127,25 +127,31 @@ class TradeDatabase:
         Persists a new trade signal into the database as separate stock and option rows.
 
         Args:
-            signal_as_string (str): A JSON string representation of a TradeSignal object.
+            signal_as_string (str): A JSON string representation of a TradeSignal object 
+                                or a JSON array containing one TradeSignal object.
 
         Returns:
-            None
+            str: Confirmation message
 
-        Raises:
-            sqlite3.Error: If the database insertion fails.
-            json.JSONDecodeError: If the JSON string is malformed.
-            ValidationError: If the data doesn't match TradeSignal schema.
-            
         Example:
             >>> db.save_signal('{"stock_signal": {...}, "option_signal": {...}}')
+            >>> db.save_signal('[{"stock_signal": {...}, "option_signal": {...}}]')
         """
         try:
             logger.debug("Called save_signal method")
+            logger.debug(f"Signal string: {signal_as_string}")
             
             # Parse JSON string to dictionary
-            signal_dict = json.loads(signal_as_string)
-            logger.debug(f"Converted to json: {signal_dict}")
+            parsed = json.loads(signal_as_string)
+            logger.debug(f"Converted to json: {parsed}")
+            
+            # Handle both array and object formats
+            if isinstance(parsed, list):
+                if len(parsed) != 1:
+                    raise ValueError("Expected exactly one trade signal in array")
+                signal_dict = parsed[0]
+            else:
+                signal_dict = parsed
             
             # Convert dictionary to TradeSignal object
             trade_signal = TradeSignal(**signal_dict)
@@ -153,6 +159,9 @@ class TradeDatabase:
             
             # Generate a unique signal_id to link stock and option trades
             signal_id = f"{trade_signal.stock_signal.symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            stock_saved = False
+            option_saved = False
             
             with sqlite3.connect(self.db_path) as conn:
                 # Save stock signal if it's a valid trade
@@ -175,6 +184,7 @@ class TradeDatabase:
                     sql = f"INSERT INTO stock_trades ({columns}) VALUES ({placeholders})"
                     conn.execute(sql, stock_data)
                     logger.debug(f"Saved stock trade for {signal_id}")
+                    stock_saved = True
                 
                 # Save option signal if it's a valid trade
                 if trade_signal.option_signal.option_recommendation_strategy != "NO TRADE":
@@ -186,28 +196,29 @@ class TradeDatabase:
                         trade_signal.option_signal.option_strike
                     )
                     
+                    opt = trade_signal.option_signal 
                     option_data = {
-                        'signal_id': signal_id,
-                        'symbol': trade_signal.stock_signal.symbol,
-                        'stop_loss': trade_signal.option_signal.stop_loss,
-                        'take_profit': trade_signal.option_signal.take_profit,
-                        'confidence_score': trade_signal.option_signal.confidence_score,
-                        'market_research': trade_signal.option_signal.market_research,
-                        'option_recommendation_strategy': trade_signal.option_signal.option_recommendation_strategy,
-                        'option_recommendation_reasoning': trade_signal.option_signal.option_recommendation_reasoning,
-                        'option_strike': trade_signal.option_signal.option_strike,
-                        'option_expiration_date': trade_signal.option_signal.option_expiration_date,
-                        'option_type': trade_signal.option_signal.option_type,
-                        'option_contract': occ_symbol,
-                        'option_entry_price': trade_signal.option_signal.option_entry_price,
-                        'num_of_contracts': trade_signal.option_signal.num_of_contracts,
-                        'implied_volatility': trade_signal.option_signal.implied_volatility,
-                        'historical_volatility': trade_signal.option_signal.historical_volatility,
-                        'delta': trade_signal.option_signal.delta,
-                        'gamma': trade_signal.option_signal.gamma,
-                        'theta': trade_signal.option_signal.theta,
-                        'vega': trade_signal.option_signal.vega,
-                        'rho': trade_signal.option_signal.rho
+                    'signal_id': signal_id,
+                    'symbol': trade_signal.stock_signal.symbol,
+                    'stop_loss': opt.stop_loss or 0.0,
+                    'take_profit': opt.take_profit or 0.0,
+                    'confidence_score': opt.confidence_score or 0.5,
+                    'market_research': opt.market_research or "No research provided",
+                    'option_recommendation_strategy': opt.option_recommendation_strategy or "NO TRADE",
+                    'option_recommendation_reasoning': opt.option_recommendation_reasoning or "No reasoning provided",
+                    'option_strike': opt.option_strike or 0.0,
+                    'option_expiration_date': opt.option_expiration_date,
+                    'option_type': opt.option_type or "call",
+                    'option_contract': occ_symbol,
+                    'option_entry_price': opt.option_entry_price or 0.0,
+                    'num_of_contracts': opt.num_of_contracts or 0,
+                    'implied_volatility': opt.implied_volatility or 0.0,
+                    'historical_volatility': opt.historical_volatility or 0.0,
+                    'delta': opt.delta or 0.0,
+                    'gamma': opt.gamma or 0.0,
+                    'theta': opt.theta or 0.0,
+                    'vega': opt.vega or 0.0,
+                    'rho': opt.rho or 0.0
                     }
                     
                     columns = ', '.join(option_data.keys())
@@ -215,10 +226,19 @@ class TradeDatabase:
                     sql = f"INSERT INTO option_trades ({columns}) VALUES ({placeholders})"
                     conn.execute(sql, option_data)
                     logger.debug(f"Saved option trade for {signal_id}")
+                    option_saved = True
             
-            logger.debug("Completed save_signal method")
+            # Return confirmation message
+            symbol = trade_signal.stock_signal.symbol
+            stock_msg = f"Saved {trade_signal.stock_signal.stock_recommendation_strategy}" if stock_saved else "Skipped (NO TRADE)"
+            option_msg = f"Saved {trade_signal.option_signal.option_recommendation_strategy}" if option_saved else "Skipped (NO TRADE)"
+            
+            result = f"✓ Successfully persisted trades for {symbol}:\n- Stock: {stock_msg}\n- Option: {option_msg}"
+            logger.debug(result)
             logger.debug("Portfolio summary report")
             logger.debug(self.get_live_portfolio_status())
+            
+            return result
             
         except json.JSONDecodeError as ex:
             logger.error(f"Invalid JSON string: {ex}")

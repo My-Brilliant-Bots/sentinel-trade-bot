@@ -2,7 +2,8 @@ import asyncio
 import logging
 
 from autogen_agentchat.agents import AssistantAgent
-from autogen_agentchat.messages import TextMessage
+from autogen_agentchat.messages import TextMessage, ChatMessage
+from typing import List
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.conditions import TextMentionTermination, MaxMessageTermination
@@ -30,6 +31,33 @@ logger = get_logger(__name__)
 
 
 class StockRecommendAgent:
+
+  # Custom selector function
+  def custom_trading_selector(self,messages: List[ChatMessage]) -> str | None:
+    """
+    Select next agent based on conversation state.
+    
+    Returns: Agent name or None to terminate
+    """
+    # Define agent order
+    AGENT_SEQUENCE = [
+        "Market_Researcher",
+        "Technical_Analyst_1",
+        "Technical_Analyst_2",
+        "Options_Strategist_1",
+        "Options_Strategist_2",
+        "Senior_Analyst",
+        "Portfolio_Data_Manager"
+    ]
+    
+    message_count = len(messages)
+    
+    # Check for completion signal
+    if message_count > 0 and "WORKFLOW_COMPLETE" in messages[-1].content:
+        return None
+    
+    # Return next agent or None if workflow complete
+    return AGENT_SEQUENCE[message_count] if message_count < len(AGENT_SEQUENCE) else None  # Terminate after 7 messages
 
   def create_trading_team(self):
     db = TradeDatabase()
@@ -108,19 +136,20 @@ class StockRecommendAgent:
         reflect_on_tool_use=True,
         system_message=senior_analyst_review_prompt
     )
-    """
+    
+    
     portfolio_data_manager = AssistantAgent(
           name="Portfolio_Data_Manager",
-          model_client=ModelClientRegistry.get_or_email_model_client(),
+          model_client=open_router_general_purpose_model_client,
           tools=[db.save_signal,db.close_option_trade,db.close_stock_trade],
           max_tool_iterations=1,
           reflect_on_tool_use=True,
           system_message=portfolio_data_manager_system_prompt
       )
-    """
+    
 
     """Create a fresh trading team instance with reset conversation history.
-    return RoundRobinGroupChat(
+    trading_team = RoundRobinGroupChat(
         participants=[market_researcher,
           analyst_1, 
           options_agent_1, 
@@ -135,38 +164,26 @@ class StockRecommendAgent:
     # Selector prompt
     # Selector prompt
     selector_prompt = """
-  You are orchestrating a trading analysis workflow. Select the next agent strategically.
+  
+You are orchestrating a trading workflow. Select the next agent based on how many messages exist.
 
-AVAILABLE AGENTS:
-- Market_Researcher: Gathers fundamental market data, news, and context (SPEAK FIRST)
-- Technical_Analyst_1: Provides stock recommendations using technical analysis
-- Technical_Analyst_2: Provides stock recommendations using technical analysis (independent view)
-- Options_Strategist_1: Recommends options strategies and contract details
-- Options_Strategist_2: Recommends options strategies and contract details (independent view)
-- Senior_Analyst: Reviews all 4 analyst recommendations and makes final decision (SPEAK LAST)
+AGENT ORDER (by message count):
+- Message 0 (no messages yet) → SELECT "Market_Researcher"
+- Messages 1-4 (research done, need 4 analysts) → SELECT from: "Technical_Analyst_1", "Technical_Analyst_2", "Options_Strategist_1", "Options_Strategist_2" (pick one who hasn't spoken)
+- Message 5 (all 4 analysts done) → SELECT "Senior_Analyst"
+- Message 6 (Senior_Analyst done) → SELECT "Portfolio_Data_Manager"
+- Message 7+ (Portfolio_Data_Manager done) → RETURN "TERMINATE"
 
-WORKFLOW STAGES:
-1. **Research Phase**: Market_Researcher provides fundamental context
-2. **Analysis Phase**: Both Technical Analysts AND both Options Strategists provide independent recommendations
-3. **Review Phase**: Senior_Analyst synthesizes all 4 recommendations into final decision
+IMPORTANT RULES:
+1. Count the total messages in the conversation
+2. Use the table above to select based on message count
+3. If you see "WORKFLOW_COMPLETE" in the last message → RETURN "TERMINATE"
+4. Each agent speaks exactly once (check conversation history to avoid repeats)
 
-SELECTION RULES:
-1. Start with Market_Researcher (if not spoken yet)
-2. After research, select analysts in any order until all 4 have spoken:
-   - Technical_Analyst_1 and Technical_Analyst_2 (both must speak)
-   - Options_Strategist_1 and Options_Strategist_2 (both must speak)
-3. Ensure each analyst speaks EXACTLY ONCE
-4. Only select Senior_Analyst AFTER all 4 analysts have provided recommendations
-5. After Senior_Analyst speaks, return "TERMINATE"
+Look at the conversation history. Count how many messages exist. Based on that count, who should speak next?
 
-IMPORTANT:
-- Do NOT allow analysts to speak multiple times
-- Do NOT select Senior_Analyst until all 4 analysts have contributed
-- Track which agents have already spoken
-
-Based on the conversation history, who should speak next? If workflow is complete, return "TERMINATE".
 """
-
+    
     trading_team = SelectorGroupChat(
       participants=[
         market_researcher,      # Speaks first
@@ -174,13 +191,16 @@ Based on the conversation history, who should speak next? If workflow is complet
         analyst_2,              # Technical analyst 2
         options_agent_1,        # Options strategist 1
         options_agent_2,        # Options strategist 2
-        senior_analyst          # Speaks last, synthesizes everything
+        senior_analyst,         # Synthesizes everything
+        portfolio_data_manager  # Speaks last, Manages trade data in the database
     ],
     model_client=open_router_general_purpose_model_client,
     selector_prompt=selector_prompt,
     termination_condition=TextMentionTermination("TERMINATE") | MaxMessageTermination(10),
+    selector_func=self.custom_trading_selector,
     allow_repeated_speaker=False  # Prevents same agent from speaking consecutively
    ) 
+  
    
     return trading_team
 
